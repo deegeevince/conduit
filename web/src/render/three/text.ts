@@ -414,7 +414,7 @@ export function createTextPool(): TextPool {
   };
 
   /**
-   * A typeset formula (PLAN-maths M7): the run is the whole of it, and what KaTeX set is a picture on a plane in its place, drawn the way a run of CJK is: its glyph
+   * A typeset formula: the run is the whole of it, and what KaTeX set is a picture on a plane in its place, drawn the way a run of CJK is: its glyph
    * boxes and rules replayed on a 2D canvas (`render/formula`), white, and tinted by the run's colour. It is not drawn until the page has set it; nothing else of the
    * element is waited for, and a page with no typesetter at all draws nothing for it and does not wait.
    */

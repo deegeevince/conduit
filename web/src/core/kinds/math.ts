@@ -1,4 +1,4 @@
-// kinds/math.ts: a written method, laid out as on paper (PLAN-maths M2). The engine is `painter/blocks/math.ts`; the grid it lays out is the language's (`maths/written.ts`).
+// kinds/math.ts: a written method, laid out as on paper. The engine is `painter/blocks/math.ts`; the grid it lays out is the language's (`maths/written.ts`).
 
 import { layoutMath } from '../../painter/blocks/math';
 import { seal } from '../seal';

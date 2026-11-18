@@ -1,4 +1,4 @@
-// The registry: every kind of the stage, by name, and the compiler's proof that none is missing (PLAN-v3-core 2.3, package PC1).
+// The registry: every kind of the stage, by name, and the compiler's proof that none is missing.
 //
 //   KINDS is `{ [K in KindId]: Sealed<K> }`. Leave a kind out and the build stops with its name (TS2741); file a toggle under `slider`
 //   and it stops (the `id` does not match); each kind's own M and L are private to its file (`seal`).

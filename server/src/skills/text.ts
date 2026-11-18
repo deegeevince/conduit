@@ -1,4 +1,4 @@
-// The text of a skill, as the brain is given it (PLAN-skills sections 2 and 3). Read fresh from disk every time it is used, so an edit is live at once;
+// The text of a skill, as the brain is given it. Read fresh from disk every time it is used, so an edit is live at once;
 // never kept, never logged, never written to the audit. What is changed: the frontmatter goes, `$ARGUMENTS` becomes the person's words, the folder
 // variable becomes a list of the skill's files, and a line Claude Code would run on load is replaced by a note. Then it is cut at a heading to fit.
 

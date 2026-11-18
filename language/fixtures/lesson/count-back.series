@@ -1,4 +1,4 @@
-# A worksheet question done two ways: the example of PLAN-v3-core section 3, made whole.
+# A worksheet question done two ways, made whole.
 part w1 | Sheet 1
 part s1 in=w1 | Take away tens
 part q1 in=s1 | 64 − 30 =

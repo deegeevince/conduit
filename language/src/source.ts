@@ -1,4 +1,4 @@
-// A real document is a source with its structure beside it (PLAN-anchors section 2): the file as given, plus one sidecar in one shape for every
+// A real document is a source with its structure beside it: the file as given, plus one sidecar in one shape for every
 // format. `resolve` (anchor.ts), search and the brief read the sidecar and never learn a format.
 import { guards } from './anchor';
 import type { Frac } from './anchor';

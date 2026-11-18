@@ -1,4 +1,4 @@
-// Entry for bench-ui.html (PLAN-v2.2, package F0): the interface kit with no painter around it. A fixture's lines are
+// Entry for bench-ui.html: the interface kit with no painter around it. A fixture's lines are
 // parsed, laid out by the solver, drawn as the shapes and words the painter already draws, and put on the real WebGL
 // renderer in either look. Tabs switch, picks and toggles flip, fields take text; a dashboard's chart is the real charting
 // engine. `window.__ui` is what a driver reads: the numbers of rows 44 and 46, and the pictures' own facts.
@@ -287,7 +287,7 @@ function rebuildPanel(): void {
 
 // ------------------------------------------------------------------ what a driver reads
 
-/** Every fixture in both looks: the numbers of PLAN-v2.2 row 44, kept apart for what F0 wrote and what the brain wrote cold. */
+/** Every fixture in both looks: the numbers, kept apart for what F0 wrote and what the brain wrote cold. */
 function report(oracle: number): unknown {
   const rows: unknown[] = [];
   const blank = () => ({ coordinates: 0, lostWords: 0, outside: 0, overlap: 0, offGrid: 0, smallTarget: 0, dense: 0, twoPrimary: 0, screens: 0, parts: 0, worstLines: 0 });

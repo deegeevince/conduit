@@ -1,4 +1,4 @@
-// pnpm art: the shelf's dev tool (PLAN-art.md, section 6).
+// pnpm art: the shelf's dev tool.
 //
 //   pnpm art import <file.svg> --subject <words> [--pose <word>] [--view <word>] [--facing left|right|front] [--arm <B|D|…>] [--by <maker>]
 //                    [--how <words>] [--licence <text>] [--brush ink|dry|…] [--out <file.json>|--print]

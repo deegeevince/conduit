@@ -47,7 +47,7 @@ export interface StageInk {
   /** lays the layer over the stage, or puts it away; what is drawn is kept */
   show(open: boolean): void;
   /**
-   * PLAN-canvas, behind `?lens=1`. On: the layer stays over the stage but lets every pointer through, so a pen on a device that has shown one can
+   * Behind `?lens=1`. On: the layer stays over the stage but lets every pointer through, so a pen on a device that has shown one can
    * draw without Draw being switched on (the lens hands it the pen's first touch with `penDown`), and what is drawn waits for the next message with
    * the same toolbar, which shows once there is a stroke to send. Off: the layer is shown only when Draw is on, as it always was.
    */

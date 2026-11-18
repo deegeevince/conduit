@@ -1,4 +1,4 @@
-// The page's side of the lesson (PLAN-v3-core WS6): runs the lesson program on the surface host (web/src/surfaces/host.ts), gives it the document
+// The page's side of the lesson: runs the lesson program on the surface host (web/src/surfaces/host.ts), gives it the document
 // and her state, hears what she did, and keeps the page's copy of her state by running WS3's `advance` on the same changes. It knows nothing of
 // the stage or the shell: the element it is given is the box the lesson fills. `bindDocumentLink` is the whole of what stage-app.ts and
 // http-link.ts add (the ten-line hook of the plan).

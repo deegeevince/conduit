@@ -9,8 +9,6 @@
 //           C: the cells of a written method (each given digit, each sign, each blank, from the written-method layout), or for a picture its numbers and sign.
 //           A scene that needs a tap (a `steps` block) must be the last scene. A slide of a `deck` stops the clock, so it is not timed here.
 //   fb-023  Arrives after it has left: an element whose entrance ends after the next scene starts.
-//
-// docs/demo-audit.md part 2 gives the reasoning. The audit's scratch script (need.ts) is what this grew from.
 import { maths } from '../src/index';
 import type { ElementSpan } from '../src/index';
 import { allDemos, play, scenesOf } from './demo-lib';
@@ -24,7 +22,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
 
 /** Demos whose scenes are reported but do not fail the run: another builder owns them. */
 const WARN_ONLY: Readonly<Record<string, string>> = {
-  code: 'code.series is v3-codefix\'s and merged without the audit\'s waits (docs/demo-audit.md 2.4: wait 8s after the first listing, 8.4s after the second); add them there and delete this line',
+  code: 'code.series was merged without the reading waits (wait 8s after the first listing, 8.4s after the second); add them there and delete this line',
 };
 
 export const words = (text: string): number => text.trim().split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length;

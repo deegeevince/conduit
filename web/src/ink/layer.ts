@@ -87,7 +87,7 @@ export interface Ink {
   setBackground(background: InkBackground | null, space?: InkSpace): void;
   setFingerDraws(value: 'auto' | boolean): void;
   /**
-   * The lens the layer is looked through (PLAN-canvas): the space point at the layer's top-left and how many layer pixels one space unit takes on top of the layer's own
+   * The lens the layer is looked through: the space point at the layer's top-left and how many layer pixels one space unit takes on top of the layer's own
    * fit. Strokes stay in space units, so zooming and panning never touches them; the pen's width on the screen stays what it was. Null: no lens.
    */
   setView(view: { readonly x: number; readonly y: number; readonly scale: number } | null): void;

@@ -1,4 +1,4 @@
-// The document chapter (PLAN-v3-core WS7, split by GEN1a): what the brain is told so that it writes a document of parts, and nothing about whom it is for.
+// The document chapter (split by GEN1a): what the brain is told so that it writes a document of parts, and nothing about whom it is for.
 //
 // Nothing here is in the fixed system prompt. The DOCUMENT chapter rides in the turn's brief whenever a document of parts exists, or a technique
 // card the library chose writes one (`usesParts`). What a particular kind of document teaches (a lesson for a young learner, a recipe, a review,

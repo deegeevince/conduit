@@ -1,4 +1,4 @@
-// SVG in, Series lines out, for the art bake-off (PLAN-art.md, section 6 "Validation, whoever made the sheet").
+// SVG in, Series lines out, for the art bake-off (section 6 "Validation, whoever made the sheet").
 // The document is read by a small strict reader of our own (no DOCTYPE, no entities, no CDATA, no text), checked against an allow-list,
 // its transforms baked in, and every part written by `serializeLine` and read back by `parseLine`: the page never receives SVG.
 // Nothing here touches the network, the disk or a browser.

@@ -1,5 +1,5 @@
 // A kind the registry knows by name and the new core cannot draw yet: a typed "not yet". It keeps the registry complete, so a scene that holds
-// it routes to the old core (PLAN-v3-core section 4, "the seam"), and it keeps its fixtures for the builder who makes it ready. Every
+// it routes to the old core, and it keeps its fixtures for the builder who makes it ready. Every
 // function is total and draws nothing; `status` says why, by name.
 
 import type { KindId } from '../../../../language/src/kinds';

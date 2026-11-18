@@ -1,4 +1,4 @@
-// Shapes and words to a Frame (PLAN-v2.2 E13): "the kit is drawn from what the painter already draws (rounded rects,
+// Shapes and words to a Frame: "the kit is drawn from what the painter already draws (rounded rects,
 // `soft=` for a shadow, type), so no renderer learns anything". This is the adapter: a rounded rectangle becomes a
 // ShapeFrame with a fill, an edge and, under it, a soft shadow; a path becomes a ShapeFrame; a line of text becomes an
 // ElementFrame whose runs are placed with the same advance tables the measurer used. Edges are snapped to device

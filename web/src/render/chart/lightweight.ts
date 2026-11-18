@@ -228,7 +228,7 @@ const PAD_BARS = 1;
 /** The label size is at most the chart's height over this. */
 export const LABELS_PER_HEIGHT = 8;
 
-/** What a test (and the battery) can ask of a mounted chart beyond its probe: the numbers behind the rules of PLAN-v2.1 row 9. */
+/** What a test (and the battery) can ask of a mounted chart beyond its probe: the numbers behind the chart rules. */
 export interface ChartMeasure {
   /** the size the labels and ticks are set at, and the title's, CSS pixels */
   readonly labelPx: number;

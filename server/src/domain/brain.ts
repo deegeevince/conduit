@@ -139,7 +139,7 @@ export type BrainEvent =
   | { readonly type: 'permission'; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly expiresMs: number; readonly detail?: string }
   /**
    * The brain called a read-only web tool: its name and the query or URL, never what came back. This is the hotfix's form
-   * (`BRAIN_TOOLS`); STUB(PLAN-v2.1 package G): `activity` takes its place, with a start, an end and a state for each call.
+   * (`BRAIN_TOOLS`); STUB: `activity` takes its place, with a start, an end and a state for each call.
    */
   | { readonly type: 'tool'; readonly tool: string; readonly target: string | null };
 

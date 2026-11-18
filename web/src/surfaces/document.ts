@@ -13,7 +13,7 @@
 import type { AppTokens as SurfaceTokens } from '../contracts/app';
 
 /**
- * The policy, as PLAN-v3-core 2.6 states it. Nothing is allowed that reaches the network: the only sources are the document itself and data: or
+ * The policy. Nothing is allowed that reaches the network: the only sources are the document itself and data: or
  * blob: pictures, fonts and media. `connect-src`, `frame-src` and `worker-src` are said as well as implied, so the page does not depend on a
  * browser's reading of a fallback; `base-uri` and `form-action` are listed because `default-src` does not cover them.
  */

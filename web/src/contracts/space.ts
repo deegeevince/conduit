@@ -35,7 +35,7 @@ export interface Box {
 }
 
 /**
- * The part of the page the screen shows (PLAN-canvas), for a stage looked at through a lens. `x`, `y` are the page point at the screen's top-left,
+ * The part of the page the screen shows, for a stage looked at through a lens. `x`, `y` are the page point at the screen's top-left,
  * `scale` is the screen pixels one page unit takes, and `width`, `height` are the screen window in CSS pixels. Absent on a frame: the screen shows
  * the page from its top-left at one to one, as it always has.
  */

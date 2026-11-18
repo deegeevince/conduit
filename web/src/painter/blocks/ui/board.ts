@@ -1,4 +1,4 @@
-// Screens, stood side by side and scaled together to their room (PLAN-v2.2 E13). Several screens are one thing: a
+// Screens, stood side by side and scaled together to their room. Several screens are one thing: a
 // journey. They stand at their true proportions, in the order written, as large as the room lets them all be; `from=`
 // draws the arrow. When the room is too narrow for them all to be read (a phone), the board shows one screen large and
 // the rest as a strip of small ones, and a tap on a small one brings it forward.

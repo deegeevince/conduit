@@ -1,4 +1,4 @@
-// A figure on the stage (PLAN-visuals 2(a), FG2): the figure kit's pure engine (`blocks/figure`) laid out and drawn as finished frames, the way a
+// A figure on the stage: the figure kit's pure engine (`blocks/figure`) laid out and drawn as finished frames, the way a
 // mock-up is (`ui-stage.ts`): the rows of the `figure` structure are its own lines (parts, routes, steps), read by the language's `readFigure`.
 //
 //   rows of the structure  ->  readFigure  ->  layoutFigure in the room  ->  paintFigure  ->  DrawnFrames

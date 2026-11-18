@@ -1,4 +1,4 @@
-// kinds/code.ts: PLAN-v3-core 2.3, package PC1, made ready by PC10. The `code` engine (a listing: rows taken exactly, monospaced, each word coloured by what it is)
+// kinds/code.ts: The `code` engine (a listing: rows taken exactly, monospaced, each word coloured by what it is)
 // wrapped; its code stays in `painter/blocks/code.ts` (the tokenizer in `code-lex.ts`).
 
 import { layoutCode } from '../../painter/blocks/code';

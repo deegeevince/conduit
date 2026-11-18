@@ -1,4 +1,4 @@
-// What is done to a document, the person's and the mind's, as ops in the log (PLAN-anchors section 4), and the lines of the language that say
+// What is done to a document, the person's and the mind's, as ops in the log, and the lines of the language that say
 // them. Every action is an op; undo is an op; what is on screen is one pure merge by log order (`layerOf`).
 import { ANCHOR_LIMITS, anchorFromPairs, anchorQuote, anchorTokens, guards, isAnchorId, isNumberedAnchorId, isObjectId, readAnchor, rebase, resolve } from './anchor';
 import type { AnchorId, DocAnchor, PairWord, Pinned, Selector } from './anchor';

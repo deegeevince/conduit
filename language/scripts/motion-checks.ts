@@ -1,4 +1,4 @@
-// Motion that keeps time (PLAN-motion.md): the words and their contract, then the pure arithmetic. Run by `pnpm timeline`.
+// Motion that keeps time: the words and their contract, then the pure arithmetic. Run by `pnpm timeline`.
 import { EMPTY_STAGE, LineNormalizer, LineReader, parseLine, serializeLine, TurnScore } from '../src/index';
 import type { Issue, Schedule } from '../src/index';
 import { LOOP_DEFAULT, NO_OFFSET, clockAt, cycleAt, frac, loopOffset, openClock, pinnedClock, rebase, rideShare, turnAbout } from '../src/motion';

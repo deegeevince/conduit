@@ -1,4 +1,4 @@
-// The owner's skills in the composer (PLAN-skills SK1): a "Skills" view in the [+] menu, with a search box and one row per skill, and a chip in
+// The owner's skills in the composer: a "Skills" view in the [+] menu, with a search box and one row per skill, and a chip in
 // the tray above the field for the skill held for the next message. Reading only: a tap holds a skill, and the server reads and uses its text
 // when the message is sent. Nothing here runs a skill's scripts or sees its text; the page holds names and ids.
 

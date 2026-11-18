@@ -1,4 +1,4 @@
-// What a hand has done to a written method's blank cells (PLAN-maths M3): the digits typed, or filled by a line, and whether the pen has ink in the cell. It is the
+// What a hand has done to a written method's blank cells: the digits typed, or filled by a line, and whether the pen has ink in the cell. It is the
 // painter's whole knowledge of it, as `controls/ask-state.ts` is of an ask: the layout (`math.ts`) draws from it, and the painter and the access layer work it.
 // Nothing here marks a cell right or wrong, gives a hint or reads the pen's writing: the person writes and sends, and the model, shown the picture of the sum
 // with their writing on it, decides what comes next (owner: write, then send; fb-104).

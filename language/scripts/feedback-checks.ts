@@ -1,4 +1,4 @@
-// Checks of the owner's feedback that the language settles (docs/feedback.md), each named by its row. Run by `pnpm timeline`.
+// Checks of the owner's feedback that the language settles, each named by its row. Run by `pnpm timeline`.
 //
 //   fb-058  the brain is taught the `math` line for a column sum (no digits placed by hand), it is carried when the words are the owner's, and it never holds the answer
 //   fb-090  a photographed question is shown first with a callout on each number it gives, then worked as a `math` line (the chapter, carried with a photo for the owner's words).
@@ -6,7 +6,7 @@
 //   fb-104  (owner: write, then send) the written method has no Check, Hint or act of its own: the chapter and the fixed prompt say the person writes in the boxes with the pen and
 //           sends, and the model, shown their writing on the sum, decides what is next
 //   fb-008  a markdown bullet or numbered item that is no Series ("- **Mercury** …", "* x", "1. First") is said as text, marker and emphasis off, with a warning that says so, not refused
-//   ro-3a   (PLAN-romer 3a) "show me the maths" is a request to SEE a calculation, not to be coached through one: the chapter the words carry opens by saying which case is which,
+//   ro-3a   "show me the maths" is a request to SEE a calculation, not to be coached through one: the chapter the words carry opens by saying which case is which,
 //           and coaches only the learner who will do the working; the formula line it teaches reads
 //   fb-101  the written method is named in the fixed prompt for any sum worked by hand (a photo of a sheet, words that say nothing of maths), and the chapter rides with the
 //           turns of a thread of sums: a photo or the pen's drawing with vague words, "in columns", "what's next" (a replay of the shape of a real thread, turn by turn)
@@ -97,7 +97,7 @@ function fb058(): void {
   // the hand-placed recipe is gone: no coordinates for digits, no right edge, no mono face, no free layout (a figure scene on a square canvas is the photo's, fb-090)
   expect('fb-058: the chapter teaches no hand-placed column', /align=right|face=mono|layout=free|a row every 10|path.*rule/.test(chapter), false);
   expect('fb-058: the chapter does not teach `problem` or the workspace', /\bproblem\b|workspace/i.test(chapter), false);
-  // the brief only grows for what it was asked to say (it was 1,348 characters; PLAN-romer 3a and PLAN-maths M7 added the two cases and the typeset formula, 1,654; fb-090 added the photo, the room the working needs and the finished act)
+  // the brief only grows for what it was asked to say (it was 1,348 characters; the two cases and the typeset formula took it to 1,654; fb-090 added the photo, the room the working needs and the finished act)
   expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 2240, true);
   // and it is carried for the owner's own words (they hold no digit and none of the old cue words), and by the maths card
   expect('fb-058: the owner\'s sentence is read as a maths question', asksForMaths(SENTENCE), true);

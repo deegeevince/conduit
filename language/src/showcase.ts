@@ -1,4 +1,4 @@
-// "What Conduit can do" (PLAN-catalogue.md): one capability, one short page, seven categories. This file is the whole table. The pages
+// "What Conduit can do": one capability, one short page, seven categories. This file is the whole table. The pages
 // (language/demos/showcase/<category>.series, step S1), the check group that judges them (S2), the overview at /capabilities (S4) and the reel (S5)
 // all read it and nothing else for what a page is, what it claims to show and what it needs of the painter. It holds no page text: those are the
 // pages'. `pnpm timeline` checks the table (language/scripts/showcase-checks.ts).
@@ -177,8 +177,8 @@ export const SHOWCASE: readonly ShowcaseEntry[] = [
   // Not yet: no page, not on the overview, not in the reel
   notYet({ id: 'link', category: 'ask', name: 'Read a link', caption: 'Give it a link and it reads the page before it answers.', today: [], needs: ['flag:links'], waits: 'LINKS_READY' }),
   notYet({ id: 'slides', category: 'words', name: 'A slide deck', caption: 'A short talk, a scene to a slide, that you step through.', today: ['deck#1'], needs: ['flag:decks'], waits: 'DECKS_READY' }),
-  notYet({ id: 'formula', category: 'numbers', name: 'A typeset formula', caption: 'A formula set as in a textbook, in a sentence or on a line of its own.', today: [], needs: ['feature:formula'], waits: 'PLAN-maths M7' }),
-  notYet({ id: 'orbit', category: 'drawings', name: 'Motion that keeps time', caption: 'Things that circle, swing and pulse on a clock you can slow or scrub.', today: [], needs: ['flag:clockwork'], waits: 'PLAN-motion steps 2-6, then it replaces motion' }),
+  notYet({ id: 'formula', category: 'numbers', name: 'A typeset formula', caption: 'A formula set as in a textbook, in a sentence or on a line of its own.', today: [], needs: ['feature:formula'], waits: 'the formula renderer' }),
+  notYet({ id: 'orbit', category: 'drawings', name: 'Motion that keeps time', caption: 'Things that circle, swing and pulse on a clock you can slow or scrub.', today: [], needs: ['flag:clockwork'], waits: 'the clockwork motion steps, then it replaces motion' }),
 ];
 
 /** The table, read: by id, by category, the ones that work, the ones that do not yet, the reel. Built over any table, so a check can read a broken one. */

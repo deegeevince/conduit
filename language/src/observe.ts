@@ -1,4 +1,4 @@
-// Observations and the brain's attention (PLAN-stage section 2; package SA3). PURE and shared: the server builds the feed, the brief prints the digest.
+// Observations and the brain's attention (package SA3). PURE and shared: the server builds the feed, the brief prints the digest.
 //
 // PROTECTED, beside review.ts: the urgent table and the floor below are constants the lessons loop may PROPOSE changes to and never apply.
 // The brain decides what to look at; what it cannot choose to ignore is `FLOOR`: the person's input, refusals, and unreadable text on the answer.

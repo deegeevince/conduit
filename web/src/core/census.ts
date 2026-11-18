@@ -1,6 +1,6 @@
 // The census: the data under a frame. What is on the stage at one moment, as boxes, words, sizes and ink, read from the painter's own
 // views and plan and from the resting picture. Pure: no DOM, no clock. The invariants (invariants.ts) are rules over it.
-// PLAN-v3-core 2.1 and 2.8, package LP1. Report-only: it describes today's frames; it changes none.
+// Report-only: it describes today's frames; it changes none.
 
 import type { ElementKind } from '@conduit/language';
 import type { StageElementView } from '../contracts/painter';

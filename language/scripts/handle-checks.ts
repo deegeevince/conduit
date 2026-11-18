@@ -1,4 +1,4 @@
-// A hand on a drawn thing works a slider (PLAN-depth.md, D1): the solver that finds the value keeping a thing nearest the finger, for one slider and for two.
+// A hand on a drawn thing works a slider: the solver that finds the value keeping a thing nearest the finger, for one slider and for two.
 // Run by `pnpm timeline` (through `spaceChecks`). Pure: the pose is a function the check writes, so there is no drawing and no pointer here.
 import { nearestPair, nearestValue } from '../src/handle';
 import type { HandleRange } from '../src/handle';

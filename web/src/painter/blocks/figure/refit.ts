@@ -1,4 +1,4 @@
-// `refit` (PLAN-visuals 2(a), FG1's `refit` as the figure kit has it): a part `in=` a closed shape is shrunk toward its centre until it sits
+// `refit` (FG1's `refit` as the figure kit has it): a part `in=` a closed shape is shrunk toward its centre until it sits
 // inside. No renderer clip is needed, so what is drawn is what was measured, and a label's leader lands on what is really there.
 //
 // Containers are fitted before what is in them, so a chamber in a chamber in a body is held by each in turn. Pure.

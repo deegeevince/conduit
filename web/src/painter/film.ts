@@ -27,7 +27,7 @@ export function lineSpans(recording: Recording): Map<number, { readonly start: n
 }
 
 /**
- * The stage clock a film shows at `time` seconds (PLAN-motion): what the time slider holds if there is one (the drag's, or the viewer's, or as written), otherwise one clock
+ * The stage clock a film shows at `time` seconds: what the time slider holds if there is one (the drag's, or the viewer's, or as written), otherwise one clock
  * unit a second from the start of the scene `time` falls in, as the controls that set the rate (a slider, or a toggle that is 1 or 0; several multiply) make it. A film that is
  * made for reduced motion is at rest: zero, or the time slider's value. It is the same arithmetic as a live clock's, `pinnedClock`, read at a time instead of run.
  */

@@ -1,4 +1,4 @@
-// Verify (PLAN-v3-core WS5, 2.9): what is checked about a part of a document written ahead, before it is offered.
+// Verify: what is checked about a part of a document written ahead, before it is offered.
 //
 // Nothing here reads a file, a clock or the network, and nothing names or describes the learner. A part is checked BY KIND, and the kinds are
 // a table (`CHECKERS`) so that the worksheet is the first case and not the only one:

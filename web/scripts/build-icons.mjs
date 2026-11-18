@@ -1,4 +1,4 @@
-// Writes the kit's icons as data (PLAN-v2.2 E13, F0): about 160 outlines from Lucide (ISC), a development dependency
+// Writes the kit's icons as data: about 160 outlines from Lucide (ISC), a development dependency
 // that is read here and never shipped. Each icon becomes one SVG path string on a 24 x 24 grid; `geometry.ts` already reads
 // path data, so nothing else is needed to draw them. Run with `pnpm --filter @conduit/web icons`.
 //

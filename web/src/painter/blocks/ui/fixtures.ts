@@ -1,4 +1,4 @@
-// F0's fixtures (PLAN-v2.2 section 9): the lines of Appendix C's six screens as the brain wrote them; M16's home page, the
+// F0's fixtures: the lines of Appendix C's six screens as the brain wrote them; M16's home page, the
 // owner's "why is it so ugly", written as a tree in `browser` and in `phone`; a settings screen; a dashboard that holds a
 // real chart. Each is lines of text, because that is what the brain writes and what `parseInterface` reads.
 

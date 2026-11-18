@@ -1,4 +1,4 @@
-// The solver's oracle (PLAN-v2.2 row 46): the same random tree laid out by `solve` and by the browser's own flexbox, and
+// The solver's oracle: the same random tree laid out by `solve` and by the browser's own flexbox, and
 // every box compared. The subset is CSS's own, so the browser is the judge.
 //
 // `generate` is pure (a seeded stream), so the 2,000 trees are the same on every run. `inDom` builds one as real

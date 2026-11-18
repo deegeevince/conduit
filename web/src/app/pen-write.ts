@@ -1,4 +1,4 @@
-// The Pencil on the stage, with no mode (PLAN-maths M4). While a written method has cells to write in, a pen that goes down inside it starts ink there: no Draw toggle, no
+// The Pencil on the stage, with no mode. While a written method has cells to write in, a pen that goes down inside it starts ink there: no Draw toggle, no
 // switch. A short pen tap is still a press. A finger taps (and, with the lens, pans) and never writes; once a pen has been seen, a palm is ignored (`PalmGuard`).
 //
 //   which cell    the cell that holds most of a stroke's points, each cell taken 20% larger; the band above the top row is the carry cells (a carry box reaches up by its

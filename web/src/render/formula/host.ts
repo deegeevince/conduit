@@ -1,4 +1,4 @@
-// The page's side of a typeset formula (PLAN-maths M7): what the painter asks of it (`FormulaHost`, `painter/formula.ts`) and what the renderers draw from.
+// The page's side of a typeset formula: what the painter asks of it (`FormulaHost`, `painter/formula.ts`) and what the renderers draw from.
 //
 // The painter asks for a formula's size and is told when it is known. KaTeX is loaded the first time one is asked for, as a chunk of its own (`typeset.ts`), so a page
 // that never shows a formula never has it; the formula is then set once, measured in the browser's own layout, and kept, and everything after is a lookup.

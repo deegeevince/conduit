@@ -1,6 +1,6 @@
 // Entry for bench-wall-hands.html (WL2): the wall under real hands. Pictures drawn by the three renderer, a `LensRig` for the camera, and
 // `attachGestures` on the room for touch, mouse, wheel, keys and Safari's gesture events. One live DOM frame (a card with a slider) shows
-// only for the tile at full size and at rest, as PLAN-wall section 4 says; a far frame has no DOM. The server tool (`pnpm wall-bench hands`)
+// only for the tile at full size and at rest; a far frame has no DOM. The server tool (`pnpm wall-bench hands`)
 // drives it with real input over DevTools and reads the per-frame lens trace this page keeps.
 //
 //   bench-wall-hands.html?source=real|made&screen=phone|desk&motion=glide|fade&hud=1

@@ -1,4 +1,4 @@
-// Placeholder art (PLAN-v2.2 F1): a picture that is not a grey box. Cover art, avatars, a map and a sparkline are drawn from the words they stand for: the same
+// Placeholder art: a picture that is not a grey box. Cover art, avatars, a map and a sparkline are drawn from the words they stand for: the same
 // title gives the same picture on every screen and every run (a seeded generator, no clock, no random), so a track reads as itself wherever it appears, and
 // a replay is the same pixels. Everything is made of the shapes the painter already draws: a gradient rectangle and paths with an alpha, clipped to the
 // picture's own rounded corners here (a polygon cut by a convex outline), so that nothing needs a mask.

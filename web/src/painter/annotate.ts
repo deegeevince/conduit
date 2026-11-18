@@ -1,4 +1,4 @@
-// The brain's own picture of its draft (PLAN-v2.1, D4). The stage as it will rest, with what a fix needs to name things on it drawn over: each
+// The brain's own picture of its draft. The stage as it will rest, with what a fix needs to name things on it drawn over: each
 // element's id at its top-left corner, and a ruler of canvas units along the picture's top and left edges. It is made from a frame computed
 // for the purpose and rasterised by itself, never drawn on the stage; a look that cannot spare the ink (its ground is too busy to read small
 // marks on) gets the picture as it is.

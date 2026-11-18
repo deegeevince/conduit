@@ -1,4 +1,4 @@
-// The lens as pure geometry (PLAN-canvas). A lens is the page point at the centre of the screen and the screen pixels one page unit takes; the
+// The lens as pure geometry. A lens is the page point at the centre of the screen and the screen pixels one page unit takes; the
 // screen is a window of fixed size. Nothing here draws, measures or reads the DOM: the same numbers go to the renderer, the DOM layers and the
 // pointer mapping, so what is drawn, what is hit and what is inked cannot disagree.
 
@@ -43,7 +43,7 @@ export function viewOf(lens: Lens, screen: Screen): LensView {
   return { x: lens.x - screen.width / 2 / lens.scale, y: lens.y - screen.height / 2 / lens.scale, scale: lens.scale, width: screen.width, height: screen.height };
 }
 
-/** The longest side a picture of a whole grown page is taken at (PLAN-canvas §5). */
+/** The longest side a picture of a whole grown page is taken at. */
 export const PAGE_STILL_SIDE = 1568;
 
 /** Whether a frame is of a page taller than its screen. */

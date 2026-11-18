@@ -1,4 +1,4 @@
-// kinds/table.ts: PLAN-v3-core 2.3, package PC1. The `table` engine (columns by content) wrapped; its code stays in `painter/blocks/table.ts`.
+// kinds/table.ts: The `table` engine (columns by content) wrapped; its code stays in `painter/blocks/table.ts`.
 
 import { layoutTable } from '../../painter/blocks/table';
 import { seal } from '../seal';

@@ -1,4 +1,4 @@
-// `pnpm showcase <what>`: the capability catalogue's tools (PLAN-catalogue.md). `reel` builds "What Conduit can do" as one film from the table and the pages; no model is called.
+// `pnpm showcase <what>`: the capability catalogue's tools. `reel` builds "What Conduit can do" as one film from the table and the pages; no model is called.
 //
 //   pnpm showcase reel [--out <dir>] [--only opening,ask,words,...,close] [--photo <file>] [--no-stills]
 //   pnpm showcase reel --print            the whole reel as one .series text, in chapters (to stdout, and to <dir>/reel.series with --out)

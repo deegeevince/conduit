@@ -369,7 +369,7 @@ export class LineNormalizer {
   private readonly book: LessonBook;
   /** HI1. The asks of the scene being written, when no part holds them: they stand on the stage. */
   private readonly asks: StageBook;
-  /** PLAN-maths M0. What the written methods of this scene come to, which no words may show: sealed as an ask's `is=` is. A `worked` method seals nothing. */
+  /** What the written methods of this scene come to, which no words may show: sealed as an ask's `is=` is. A `worked` method seals nothing. */
   private mathAnswers: string[] = [];
 
   /** SA5. `flow`: a live brain's words and controls are placed by the stage, never by a coordinate. `free`: lines are taken as written (replays, golden, old logs). */

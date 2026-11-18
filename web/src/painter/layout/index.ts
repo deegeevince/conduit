@@ -90,7 +90,7 @@ export interface LayoutInput {
    */
   readonly controlColumns?: 1 | 2;
   /**
-   * PLAN-canvas step 2: the room is a page that grows. Everything is set at the size it asks and nothing is let go to make it fit: no shorter form is taken, no line
+   * The room is a page that grows. Everything is set at the size it asks and nothing is let go to make it fit: no shorter form is taken, no line
    * retires, nothing is set smaller, the choices keep their size and every one stands. `overflow` is always empty.
    */
   readonly natural?: boolean;
@@ -1626,7 +1626,7 @@ export function controlsNeedOf(input: LayoutInput, flow: Box): number {
 }
 
 /**
- * What the stage plan needs to know of the words before it divides the stage (PLAN-v2.1, D1): how tall the flow is across a column `width`
+ * What the stage plan needs to know of the words before it divides the stage: how tall the flow is across a column `width`
  * wide with all that is expected come, and how tall the choices are across the same width. Set with the very code `arrange` uses.
  */
 export function needsOf(input: LayoutInput, width: number): { readonly flow: number; readonly foot: number; readonly order: number | null; readonly least: number } {

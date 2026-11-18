@@ -1,4 +1,4 @@
-// What `pnpm library check` holds the library to (PLAN-v2.md, table row 22):
+// What `pnpm library check` holds the library to (table row 22):
 // a prompt of a family that has a technique is handed it in the top three; a
 // plain prompt is handed none.
 //

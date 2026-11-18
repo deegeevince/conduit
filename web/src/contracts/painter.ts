@@ -55,7 +55,7 @@ export interface PainterOptions {
    * into it. When it answers a picture, that is the snapshot (the stage under it is not what the person sees); null: nothing covers the stage.
    */
   readonly cover?: () => Promise<Blob | null>;
-  /** PLAN-canvas step 2 (`?lens=1`). A scene that would be squeezed to fit the screen is laid out on a page as tall as its content needs instead. Absent: the screen is always the page. */
+  /** With `?lens=1`: a scene that would be squeezed to fit the screen is laid out on a page as tall as its content needs instead. Absent: the screen is always the page. */
   readonly grow?: boolean;
 }
 
@@ -109,7 +109,7 @@ export interface ControlView {
   readonly numeric?: boolean;
 }
 
-/** One cell of a written method that a hand writes in (PLAN-maths M3): where it stands and what it holds. Host CSS pixels. */
+/** One cell of a written method that a hand writes in: where it stands and what it holds. Host CSS pixels. */
 export interface MathCellView {
   readonly part: string;
   /** "tens", "carry tens", "exchange ones": what a screen reader and the brain call it */
@@ -131,7 +131,7 @@ export interface MathCellView {
 }
 
 /** A written method with cells to write in, as it stands on screen. */
-/** A typeset formula on stage as the test hook sees it (PLAN-maths M7): the TeX, where it is on screen, whether KaTeX has set it, and its fault when it could not. */
+/** A typeset formula on stage as the test hook sees it: the TeX, where it is on screen, whether KaTeX has set it, and its fault when it could not. */
 export interface FormulaView {
   readonly key: string;
   readonly id: string;
@@ -313,11 +313,11 @@ export interface PainterSnapshot {
   readonly pass: { readonly pass: number; readonly state: PassState } | null;
   /** v2.1. How the stage is divided right now (`StagePlan`), camera at rest. Absent until the painter plans its stage as one layout. */
   readonly plan?: StagePlanView;
-  /** PLAN-canvas step 0. What the scene on stage gave up to fit the screen (words let go or set smaller, blocks short of room, controls set tighter, an app scaled down), and why. Facts only. */
+  /** What the scene on stage gave up to fit the screen (words let go or set smaller, blocks short of room, controls set tighter, an app scaled down), and why. Facts only. */
   readonly squeeze: Squeeze;
-  /** PLAN-canvas step 2. The page the scene is laid out on, host CSS pixels from the screen's top-left, when it has grown past the screen; absent while the screen is the page. */
+  /** The page the scene is laid out on, host CSS pixels from the screen's top-left, when it has grown past the screen; absent while the screen is the page. */
   readonly page?: Box;
-  /** PLAN-canvas step 2. Where the newest line of a grown page stands, host CSS pixels of the page (what a lens that follows keeps in view); absent otherwise. */
+  /** Where the newest line of a grown page stands, host CSS pixels of the page (what a lens that follows keeps in view); absent otherwise. */
   readonly follow?: Box;
   /** v2.1. The deck on stage and the slide it stands at, from 1; null or absent when what is on stage is not a deck. */
   readonly deck?: { readonly slide: number; readonly slides: number; readonly title: string } | null;
@@ -357,7 +357,7 @@ export interface PainterEvents {
   readonly upload: PainterUpload;
   /** the controls on stage changed: one arrived, left, moved or took a new value. Not sent on every frame of a drag. */
   readonly controls: readonly ControlView[];
-  /** the written methods with cells to write in changed: a cell arrived, moved, took a digit or a mark (PLAN-maths M3) */
+  /** the written methods with cells to write in changed: a cell arrived, moved, took a digit or a mark */
   readonly math: readonly MathBlockView[];
   /**
    * v2.1, text out. The words on stage and where they are, for the chrome's text layer. Sent when words arrive, leave, change or come

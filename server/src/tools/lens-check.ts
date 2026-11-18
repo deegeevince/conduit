@@ -1,4 +1,4 @@
-// pnpm check's lens group (PLAN-canvas step 1, `?lens=1`): real fingers and a real pen, over the DevTools protocol, on a tablet (1180x820 at two pixels
+// pnpm check's lens group (`?lens=1`): real fingers and a real pen, over the DevTools protocol, on a tablet (1180x820 at two pixels
 // to the point, touch) and a phone (390x844). Four things are judged, each by what lands where:
 //
 //   pinch       two touch points spread to twice their distance: the lens reads 2x, about the point between them

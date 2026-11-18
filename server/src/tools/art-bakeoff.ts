@@ -1,4 +1,4 @@
-// The art bake-off (PLAN-art.md, section 4): the same subjects drawn several ways, every one rendered by the real painter in the paper look,
+// The art bake-off: the same subjects drawn several ways, every one rendered by the real painter in the paper look,
 // laid on one blind contact sheet for the owner to judge. Dev only; nothing in the app imports this.
 //
 //   pnpm bakeoff --dry-run                       the projection (calls, time, cost-equivalent); spends nothing

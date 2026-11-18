@@ -1,4 +1,4 @@
-// A selection on the stage's text layer, as the exact pieces of the stage it covers (PRINCIPLES, Pass 5: anchors). Small and apart on purpose: the
+// A selection on the stage's text layer, as the exact pieces of the stage it covers. Small and apart on purpose: the
 // anchor type is being designed elsewhere, and this is the one place that turns a DOM selection into it. `start` and `end` are character offsets
 // into the element's whole text (its wrapped lines joined as `TextSpanView.text` joins them); `prefix` and `suffix` are up to 24 characters either side.
 

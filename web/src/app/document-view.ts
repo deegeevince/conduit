@@ -1,4 +1,4 @@
-// The document view's place on the stage (PLAN-v3-core WS6): when a session has a document, this mounts the document view over the stage by itself,
+// The document view's place on the stage: when a session has a document, this mounts the document view over the stage by itself,
 // builds the document from the stream (`doc` events replace nodes by id), keeps her state (WS3's `advance`, through the host) and takes her back to
 // the picture on request. Lessons are quiet verbs for the painter (they draw nothing on the painted stage); this is what makes them visible.
 //

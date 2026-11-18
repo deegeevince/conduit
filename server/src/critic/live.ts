@@ -1,4 +1,4 @@
-// The live critic (PLAN-v2.1 package S3): a judge that can see, asked about real turns, behind `domain/critic.ts`.
+// The live critic: a judge that can see, asked about real turns, behind `domain/critic.ts`.
 //
 // It never runs on a turn's path: `compare` is started after a fix is shown and not waited for. `look` is one at a time per session (a
 // newer turn's look replaces one that has not started), at most `policy.perHour`, and bounded by `policy.lookMs`. It never throws: a

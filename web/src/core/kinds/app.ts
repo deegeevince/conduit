@@ -1,4 +1,4 @@
-// kinds/app.ts: PLAN-v3-core 2.3, package PC1. The live app's place on the stage (`painter/blocks/app.ts`: its title, its lines arriving as a
+// kinds/app.ts: The live app's place on the stage (`painter/blocks/app.ts`: its title, its lines arriving as a
 // skeleton, its frame) wrapped; the app itself runs in the sandboxed host, which the core lays over the box this kind is given. Ready where
 // there is an app host (`appHost` in the painter), as `Capabilities.structures` has it today.
 

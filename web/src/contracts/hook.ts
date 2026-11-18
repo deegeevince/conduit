@@ -63,15 +63,15 @@ export interface StageHook {
   figureFrames(seconds: number): readonly FigureFrameView[];
   /** What the controls bind on the stage's elements, as it holds now: bound words, table marks, `set` values. What the catalogue's pick check reads. */
   bindings(): readonly BindingView[];
-  /** PLAN-canvas step 1 (`?lens=1`): the lens now. `view` is null at rest; `touched` once a person has moved it. Null without the flag. */
+  /** With `?lens=1`: the lens now. `view` is null at rest; `touched` once a person has moved it. Null without the flag. */
   lens(): { readonly view: import('./space').LensView | null; readonly touched: boolean } | null;
   /** `?lens=1`: brings a point of the page into view (a box one pixel across) and answers where the screen then has it, client pixels; null without the lens. Waits for the lens to stop. */
   reach(x: number, y: number): Promise<{ readonly x: number; readonly y: number } | null>;
   /** The controls on stage, with their values and where they are on screen. */
   controls(): readonly ControlView[];
-  /** The written methods with cells to write in, with where each cell and button is, what it holds and how Check marked it (PLAN-maths M3). */
+  /** The written methods with cells to write in, with where each cell and button is, what it holds and how Check marked it. */
   maths(): readonly import('./painter').MathBlockView[];
-  /** The typeset formulas on stage (PLAN-maths M7): the TeX, the box, and whether KaTeX has set it. */
+  /** The typeset formulas on stage: the TeX, the box, and whether KaTeX has set it. */
   formulas(): readonly import('./painter').FormulaView[];
   /**
    * The same as the user setting this control and letting go: bindings follow at once, a `control` back event is sent, and a

@@ -1,4 +1,4 @@
-// A hand on a drawn thing works a slider (PLAN-depth.md, D1): given what a slider does to a thing, which value keeps the thing nearest the finger? Pure
+// A hand on a drawn thing works a slider: given what a slider does to a thing, which value keeps the thing nearest the finger? Pure
 // search over a pose function; nothing here knows a control, a pointer or a painter. The pose is whatever the drawing does at a value (a turn about a
 // pivot, a move along an outline, a point on a ball under a yaw and a pitch), so one solver serves every handle.
 //

@@ -533,7 +533,7 @@ function hardChecks(): void {
 }
 
 
-// --- the written methods (PLAN-maths M0 and M1): the contract, and the digit algorithms over ranges of sums -----------------------------------------
+// --- the written methods: the contract, and the digit algorithms over ranges of sums -----------------------------------------
 
 type Grid = maths.Grid;
 type Cell = maths.Cell;

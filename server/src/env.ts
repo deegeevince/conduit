@@ -128,7 +128,7 @@ export interface Env {
   readonly uploads: boolean;
   /** v2.1. Voice notes, read on this Mac (`VOICE`, `VOICE_LOCALE`, `VOICE_KEEP`): on by default; the audio is deleted once read unless `VOICE_KEEP=on`; `VOICE_LOCALE` (like `en-US`) names the language, else the Mac's own; `VOICE_COMMAND` is the owner's own recogniser (whisper.cpp behind a script) in place of Apple's */
   readonly voice: { readonly enabled: boolean; readonly locale: string | null; readonly keep: boolean; readonly command: string | null };
-  /** v2.1. Absolute path of the steward's status file (`STATUS_FILE`, default `STATUS.md` at the repository's root): what `/status` shows */
+  /** v2.1. Absolute path of the optional status file (`STATUS_FILE`, default `STATUS.md` at the repository's root; absent, the status is empty): what `/status` shows */
   readonly statusFile: string;
   /** v2.1. Absolute path of the changelog (`CHANGELOG_FILE`, default `CHANGELOG.md` at the repository's root): the newest section goes in the brief when the user asks what is new */
   readonly changelogFile: string;
@@ -352,7 +352,7 @@ export function loadEnv(source: Source): Env {
   const library: LibrarySettings = rawLibrary === 'none' ? { kind: 'none' } : { kind: 'seed', seedDir, overlayDir };
   const logDir = resolveLogDir(source);
 
-  // v2.1. Read here so that no package needs this file; each is used by the package the comment names (PLAN-v2.1.md).
+  // v2.1. Read here so that no package needs this file; each is used by the package the comment names.
   const withModel = brain.kind === 'claude-cli';
   // package S3
   const critic: CriticPolicy = {

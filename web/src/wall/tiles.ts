@@ -1,4 +1,4 @@
-// The tiles' pictures: four tiers by the tile's width on screen, held inside the caps of PLAN-wall section 3.
+// The tiles' pictures: four tiers by the tile's width on screen, held inside the wall's caps.
 //
 //   live  in focus, full size, at rest: today's pipeline (the bench stands the still in for it and counts it)
 //   still 40% of the view or more: one picture, 1024 px long side on a desk and 768 on a phone; 12 held on a desk, 6 on a phone, nearest first

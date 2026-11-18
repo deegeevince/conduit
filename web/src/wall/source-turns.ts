@@ -1,4 +1,4 @@
-// The wall's nodes, from turns: the source before the document's own merge (PLAN-wall section 8, WL3). Pure and DOM-free; the same list
+// The wall's nodes, from turns: the source before the document's own merge. Pure and DOM-free; the same list
 // is made on the page (from SH1's `ConversationTurn`s) and on the server (from the folded log), so both plan the same wall.
 //
 // The rule, from the plan's table:

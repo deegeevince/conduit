@@ -1,4 +1,4 @@
-// Entry for bench-figure.html (PLAN-visuals, package FG2): the `figure` kind with no painter around it. The kind from the registry is asked for its
+// Entry for bench-figure.html: the `figure` kind with no painter around it. The kind from the registry is asked for its
 // model, layout, drawing, census and input, exactly as the core will, and its frames are put on the real WebGL renderer. A press on the stepper (a
 // real pointer event) goes through the kind's own `input`; dots are redrawn every animation frame from the ambient clock.
 //

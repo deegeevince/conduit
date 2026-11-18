@@ -1,4 +1,4 @@
-// What a hand does, as one field on the turn (PLAN-anchors section 3): `you did <verb> to <anchors>`. Ink keeps its strokes; this is the
+// What a hand does, as one field on the turn: `you did <verb> to <anchors>`. Ink keeps its strokes; this is the
 // reading of them, and of a selection, a tap, a drag's end, in the one shape the mind is told.
 import { ANCHOR_LIMITS, guards, readAnchor, readAnchors } from './anchor';
 import type { DocAnchor } from './anchor';

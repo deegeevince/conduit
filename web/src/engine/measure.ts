@@ -30,7 +30,7 @@ export interface EngineView {
   readonly look: LookId;
   readonly lockLook: LookId | null;
   readonly insets: Insets;
-  /** PLAN-canvas step 2: lay the scene out as the page does with `?lens=1`, on a page as tall as it needs when it would be squeezed; absent: the screen is the page */
+  /** Lay the scene out as the page does with `?lens=1`, on a page as tall as it needs when it would be squeezed; absent: the screen is the page */
   readonly grow?: boolean;
 }
 
@@ -58,7 +58,7 @@ export interface StageFacts {
   readonly content: ContentCount;
   /** digest of the placed boxes, rounded to 0.01 */
   readonly boxes: string;
-  /** PLAN-canvas step 2: the page the answer rests on when it has grown past the screen (stage units, its top-left the screen's); absent while the screen is the page */
+  /** The page the answer rests on when it has grown past the screen (stage units, its top-left the screen's); absent while the screen is the page */
   readonly page?: { readonly width: number; readonly height: number };
   /** a leaf threw: what it said; the other facts are empty */
   readonly fault: string | null;

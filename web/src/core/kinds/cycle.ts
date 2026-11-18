@@ -1,4 +1,4 @@
-// kinds/cycle.ts: PLAN-v3-core 2.3, package PC1. The `cycle` engine (nodes round a ring) wrapped; its code stays in `painter/blocks/cycle.ts`.
+// kinds/cycle.ts: The `cycle` engine (nodes round a ring) wrapped; its code stays in `painter/blocks/cycle.ts`.
 
 import { layoutCycle } from '../../painter/blocks/cycle';
 import { seal } from '../seal';

@@ -1,4 +1,4 @@
-// What the shelf tells the brain about a figure it could not draw (PLAN-art.md, section 5, "On a miss"): a sight note on the placeholder, read
+// What the shelf tells the brain about a figure it could not draw: a sight note on the placeholder, read
 // with the rest of how the turn landed. The notes are the server's own, kept by turn and put into the painter's report when the turn is remembered.
 
 import type { Sight, SightItem, SightNote } from '@conduit/language';

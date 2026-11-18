@@ -143,7 +143,7 @@ export interface ConductorDeps {
   readonly voice?: VoiceNotes;
   /** v2.1 ops. The usage meter: every brain turn and review pass is written to it; its throttle only ever warns the owner, never refuses a turn. */
   readonly usage?: UsageMeter;
-  /** v3. The document each conversation makes: a fold over its session log (PLAN-v3-core 2.11). Absent: no conversation has one. */
+  /** v3. The document each conversation makes: a fold over its session log. Absent: no conversation has one. */
   readonly documents?: Documents;
   /** v3. What a document keeps beside its words: the cut of the photo each question sits on */
   readonly docAssets?: DocumentAssets;

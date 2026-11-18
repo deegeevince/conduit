@@ -104,7 +104,7 @@ export interface ElementFrame {
    */
   readonly plate: number;
   /**
-   * PLAN-maths M7. Set when the element is a typeset formula (`math f1 formula | …`): its one run holds the TeX as written, and the renderer draws what KaTeX
+   * Set when the element is a typeset formula (`math f1 formula | …`): its one run holds the TeX as written, and the renderer draws what KaTeX
    * set from it, in the run's colour, in the element's box (`width` by `height`, whose ems are `fontSize`). A renderer that cannot draw it shows the TeX as the
    * run's text, which is the source a reader can still read. `raster` is the pixels an em should be drawn at on this screen.
    */
@@ -263,7 +263,7 @@ export interface PictureFrame {
   readonly transform: Affine;
   /** same-origin URL of the painting, already loaded with `Renderer.preload`; null while there is none */
   readonly src: string | null;
-  /** 0..1: how far the painting has developed over the sketch: revealed through a noise threshold with a soft edge, never as a cross-fade. It does not yet spread from the sketch's lines (product.md). */
+  /** 0..1: how far the painting has developed over the sketch: revealed through a noise threshold with a soft edge, never as a cross-fade. It does not yet spread from the sketch's lines. */
   readonly develop: number;
   readonly mask: Mask;
   readonly opacity: number;
@@ -363,9 +363,9 @@ export interface Frame {
   readonly wallTime: number;
   readonly clock: ClockState;
   readonly viewport: Viewport;
-  /** PLAN-canvas. The page the scene is laid out on, in stage units with its top-left at the screen's top-left. Absent: the page is the screen. */
+  /** The page the scene is laid out on, in stage units with its top-left at the screen's top-left. Absent: the page is the screen. */
   readonly page?: Box;
-  /** PLAN-canvas. The part of the page the screen shows, when the person has a lens on it. Absent: the screen shows the page at one to one from its top-left. A renderer crops to it; nothing else about the frame changes. */
+  /** The part of the page the screen shows, when the person has a lens on it. Absent: the screen shows the page at one to one from its top-left. A renderer crops to it; nothing else about the frame changes. */
   readonly view?: LensView;
   /** the preset the look drawn now stands on. During a change it is the old look's until `progress` reaches 0.5, then the new one's. */
   readonly look: LookId;

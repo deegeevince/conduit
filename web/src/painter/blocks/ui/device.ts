@@ -1,4 +1,4 @@
-// The devices (PLAN-v2.2 E13): a phone at its true proportions, a tablet, a desk window, a browser. A screen is
+// The devices: a phone at its true proportions, a tablet, a desk window, a browser. A screen is
 // measured inside in points (a phone is 390 across); the body and the chrome are drawn around it. Pure: shapes in the
 // device's own points, origin at its outer top-left.
 

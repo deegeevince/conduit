@@ -157,7 +157,7 @@ function textSvg(element: ElementFrame, frame: Frame, fonts: Map<string, Rendere
   for (const run of element.runs) {
     if (run.text === '' || run.opacity * element.opacity <= 0.001 || run.reveal <= 0.001) continue;
     if (element.formula !== undefined) {
-      // A typeset formula (PLAN-maths M7) is its picture, as a chart is: what KaTeX set, drawn on a canvas in the run's ink, at the box the layout gave it and the room round the ink.
+      // A typeset formula is its picture, as a chart is: what KaTeX set, drawn on a canvas in the run's ink, at the box the layout gave it and the room round the ink.
       const picture = formulaCanvas(element.formula.tex, element.formula.display, element.formula.raster, run.colour);
       if (picture === null) continue;
       const pad = INK_PAD * element.fontSize;

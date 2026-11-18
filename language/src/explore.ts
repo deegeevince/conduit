@@ -25,7 +25,7 @@ export type ExploreExpectation = 'plain' | 'drawn' | 'pixels' | 'scene' | 'type'
 
 /**
  * What a prompt belongs to when scores are added up. The quality bar is set per
- * family (PLAN-v2.md): a rise in one may not be paid for by a fall in another.
+ * family: a rise in one may not be paid for by a fall in another.
  */
 export type ExploreFamily = 'diagram' | 'chart' | 'explorable' | 'mechanism' | 'scene' | 'type' | 'plain' | 'pixels' | 'paint' | 'motion' | 'open';
 
@@ -673,7 +673,7 @@ export interface Count {
   readonly n: number;
 }
 
-/** What a family's answers came to, in the terms of the quality bar (PLAN-v2.1.md section 3). Each field names its row. */
+/** What a family's answers came to, in the terms of the quality bar. Each field names its row. */
 export interface FamilyScore {
   readonly family: ExploreFamily;
   /** answers (samples of prompts, and the turns of cases that are single answers) */

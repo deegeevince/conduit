@@ -1,4 +1,4 @@
-// Hostile fixtures: one program per break-out attempt (PLAN-v3-core 2.6, "Its security"). Each tries exactly one thing, and says what happened by
+// Hostile fixtures: one program per break-out attempt. Each tries exactly one thing, and says what happened by
 // `conduit.send('result', …)`. The check (web/scripts/surface-hostile.mjs, over web/bench-surface.html) runs every fixture in a real browser, against a
 // listening server that records every request it is sent, and holds each to its `must`:
 //   - `silent`: the server was never asked for anything (the path `/<name>`), whatever the program saw;

@@ -1,4 +1,4 @@
-// The steward's account of where the product stands (`STATUS.md`): read for `/status` and for the brain's note about the app.
+// An optional account of where the product stands (`STATUS.md`, not part of the published repository): read for `/status` and for the brain's note about the app.
 
 import { readFile, stat } from 'node:fs/promises';
 import type { AppStatus } from '@conduit/language';

@@ -1,4 +1,4 @@
-// The `figure` engine (PLAN-visuals FG2): pure and DOM-free. `core/kinds/figure.ts` is its `Kind`; `bench/figure-bench.ts` its page.
+// The `figure` engine: pure and DOM-free. `core/kinds/figure.ts` is its `Kind`; `bench/figure-bench.ts` its page.
 export type { FigureHeldState, FigureInput, FigureMode, FigureNote, FigurePart, FigureRoute, FigureShape, FigureStep, Pt } from './types';
 export { FIGURES, FIGURE_NAMES } from './fixtures';
 export { layoutFigure, litParts, MAX_LABELS, SHARES, TARGET, wrapWords } from './layout';

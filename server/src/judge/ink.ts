@@ -1,4 +1,4 @@
-// What a hand wrote, read back as words (PLAN-v3-core, the writing area of an ask): a cheap model is shown the picture of the ink and asked only to
+// What a hand wrote, read back as words (the writing area of an ask): a cheap model is shown the picture of the ink and asked only to
 // TRANSCRIBE it, line by line, exactly as written. It is not asked whether it is right: the document's own matcher (`accepts`, and for
 // `check=working` the exact maths checker) decides that, so a wrong answer is never helped to look right and a right one is never read as wrong by a
 // model's opinion. A child's numbers may be big and unjoined, a seven may have a bar, a nought may not close; the reader says `unclear` rather than guess.

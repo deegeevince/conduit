@@ -1,6 +1,6 @@
 // Entry for bench-wall.html (WL0): the wall of PictureFrames drawn by the three renderer alone, no painter. The server tool
 // (server/src/tools/wall-bench.ts) serves it a wall of saved snapshots or a made-up 300, and drives it over DevTools:
-// a scripted tour, laps for the memory caps, an idle wall, reduced motion, the two questions of PLAN-wall section 3.
+// a scripted tour, laps for the memory caps, an idle wall and reduced motion.
 //
 //   bench-wall.html?source=real|made&screen=phone|desk&n=300&hud=1
 //

@@ -1,4 +1,4 @@
-// pnpm tsx src/tools/lens-bench.ts --url <server> [--throttle 4] [--out <dir>]: what the lens costs a frame (PLAN-canvas section 7: 12 ms at the 95th percentile on a phone).
+// pnpm tsx src/tools/lens-bench.ts --url <server> [--throttle 4] [--out <dir>]: what the lens costs a frame (12 ms at the 95th percentile on a phone).
 //
 // Opens `/?lens=1` on a phone-sized screen (390x844, two pixels to the point, touch) with the CPU slowed, plays a long answer, and drives the lens with real
 // fingers and a wheel over DevTools: a pinch out and in, a two-finger pan, a one-finger pan, a ctrl+wheel sweep. The page's lens loop records the milliseconds each

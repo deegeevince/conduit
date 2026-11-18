@@ -1,4 +1,4 @@
-// Motion that keeps time: the pure arithmetic (PLAN-motion.md). No clock is read here, nothing is added up per frame, and nothing here knows a painter.
+// Motion that keeps time: the pure arithmetic. No clock is read here, nothing is added up per frame, and nothing here knows a painter.
 // Every pose is a function of the drawing, a clock reading T, and the element's own period: so two periods cannot drift apart.
 import type { Point } from './types';
 import type { Loop } from './vocabulary';

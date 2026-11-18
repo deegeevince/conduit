@@ -75,7 +75,7 @@ export interface TimelineContext {
   readonly apps?: boolean;
   /** the height each live app's content asks of its frame, by key, screen pixels: the frame follows it (taller than asked: it grows; shorter: no empty band). Read when the stage is planned. */
   readonly appHeights?: ReadonlyMap<string, number>;
-  /** PLAN-canvas step 2 (`?lens=1`): a scene of words, choices, controls and a picture that would be squeezed to fit the screen is laid out on a page as tall as it needs instead. Absent: nothing grows. */
+  /** With `?lens=1`: a scene of words, choices, controls and a picture that would be squeezed to fit the screen is laid out on a page as tall as it needs instead. Absent: nothing grows. */
   readonly grow?: boolean;
 }
 
@@ -98,7 +98,7 @@ export interface TimelineInstant {
   /** the turn is closed: a tune that was the last thing said is whole */
   readonly closed?: boolean;
   /**
-   * MOTION. The stage clock T, in clock units (PLAN-motion): where everything with a `period=`, a ride or a carrier is. Absent: the instant has no clock, and every such thing is
+   * MOTION. The stage clock T, in clock units: where everything with a `period=`, a ride or a carrier is. Absent: the instant has no clock, and every such thing is
    * as it was drawn: a draft, a candidate, the snapshot, the sight picture, and every live frame until the page keeps a clock. A loop with no period is decoration and ignores it.
    */
   readonly motion?: number;
@@ -141,9 +141,9 @@ export interface Timeline {
   planAt(time: number): StagePlanView;
   /** the room the plan gave a structure or a chart as of `time`, reading-plane stage units (what a figure is held in from one turn to the next); null when it has none */
   roomAt(element: ElementSpan, time: number): Box | null;
-  /** PLAN-canvas step 0: what the layout gave up in the scene at `time` (everything but the apps, which the host knows), as facts */
+  /** What the layout gave up in the scene at `time` (everything but the apps, which the host knows), as facts */
   squeezeAt(time: number): Omit<SqueezeInput, 'apps'>;
-  /** PLAN-canvas step 2: the page the scene at `time` is laid out on, in stage units with its top-left at the screen's top-left; null while the screen is the page */
+  /** The page the scene at `time` is laid out on, in stage units with its top-left at the screen's top-left; null while the screen is the page */
   pageAt(time: number): Box | null;
 }
 
@@ -851,7 +851,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
 
   const besideOf = new Map<string, boolean>();
   const needOf = new Map<string, number>();
-  /** One layout epoch at `start`: the whole division, arrangement and fit of its scene. `grow`: the scene has a page of its own height (PLAN-canvas step 2) and nothing is squeezed to fit the screen. Nothing here is committed: the caller decides. */
+  /** One layout epoch at `start`: the whole division, arrangement and fit of its scene. `grow`: the scene has a page of its own height and nothing is squeezed to fit the screen. Nothing here is committed: the caller decides. */
   const layOut = (start: number, grow: boolean) => {
     const look = specAt(start);
     const scene = sceneAt(schedule, start);
@@ -862,7 +862,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     });
     const replaced = new Set<string>();
     for (const element of present) if (element.replaces !== null) replaced.add(element.replaces);
-    // The stage plan's blocks: what is on stage that takes room besides the words (PLAN-v2.1, D1)
+    // The stage plan's blocks: what is on stage that takes room besides the words
     const blocks = blocksAt(start, scene.id);
     // On a page that grows with no picture on it, words given a point of the canvas have no canvas to stand on: they take their place in the flow, in the order they were written
     const flat = grow && !blocks.list.some((block) => block.kind === 'picture' || block.pinned !== null);

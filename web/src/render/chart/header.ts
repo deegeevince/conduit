@@ -2,7 +2,7 @@
 // crosshair's readout. Pure canvas work, no library: `headerOf` decides what goes on which line at this width (and how
 // tall the whole header is, which the engine reserves above the plot), `paintHeader` draws it.
 //
-// The rules (PLAN-v2.1 D10): the title is the stage's `s` and bold, everything else its `xs`; the title and the legend
+// The rules: the title is the stage's `s` and bold, everything else its `xs`; the title and the legend
 // share one line where they fit and take a second only where they do not; the credit is on the chart, at the right of
 // the first line; nothing is ever drawn over anything else, and a title that cannot fit is cut with an ellipsis.
 

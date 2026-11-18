@@ -1,4 +1,4 @@
-// The shell invariant of PLAN-v3-core 2.8: every text in the shell reads 4.5:1 on its own background, from computed styles; no shell box
+// The shell invariant: every text in the shell reads 4.5:1 on its own background, from computed styles; no shell box
 // over a leaf (the second half waits for the shell's own box in `View`). Report-only. This is the one rule that reads the DOM, because the
 // chrome is DOM: it is checked where the person stands, from what the browser computed, not from what the stylesheet says.
 

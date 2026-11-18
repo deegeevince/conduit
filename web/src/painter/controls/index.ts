@@ -1,4 +1,4 @@
-// The control engine and the store of what controls hold (PLAN-v2.md, package C).
+// The control engine and the store of what controls hold.
 //
 //   engine.ts    layout, valueAt and valueAfter for each kind, in the look's own idiom
 //   card.ts      the frame of a `card`

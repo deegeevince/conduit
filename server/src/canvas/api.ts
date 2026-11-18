@@ -1,4 +1,4 @@
-// The stage API as the brain sees it (SA4; PLAN-stage section 3): six read-only tools over the session's own facts. Nothing here writes a line, moves
+// The stage API as the brain sees it (SA4): six read-only tools over the session's own facts. Nothing here writes a line, moves
 // a thing or touches the session's record: a call changes only the brain's attention for this turn (`canvas_attend`) and counts itself.
 //
 // Every result begins `rev N` and ends with a three-line footer. A person's or a stage's words that appear in a result are quoted, cut and

@@ -1,4 +1,4 @@
-// The shelf: finished art by name (PLAN-art.md, section 6). Two places hold sheets: `art/seed/*.json` in the repository, and
+// The shelf: finished art by name. Two places hold sheets: `art/seed/*.json` in the repository, and
 // `<DATA_DIR>/cache/art/<key>.json` (modelled on `pictures/cache.ts`: owner-only files with hex names, written through a rename).
 // A sheet is checked by `readSheet` whenever it is read; one that fails is left out and logged, never put on stage.
 

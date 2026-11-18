@@ -1,4 +1,4 @@
-// The stage plan (PLAN-v2.1, D1). One pure function divides a scene's stage, once per layout epoch, into regions that do not overlap:
+// The stage plan. One pure function divides a scene's stage, once per layout epoch, into regions that do not overlap:
 // the foot (the choices), the flow (the words), and what is left for the picture and for each block the painter lays out (a structure,
 // a chart, a code block). Nothing else reads the safe frame. The flow, the structure engines, the chart frames and the canvas's fit all
 // take their room from the answer, so a thing is never laid out as if it were alone.
@@ -55,7 +55,7 @@ export interface PlanInput {
   /** the width the flow would like beside the blocks (controls set two to a row): given, down to what the blocks least need, in a side-by-side division */
   readonly flowWidth?: number;
   /**
-   * PLAN-canvas step 2: grow. The scene has a page as tall as its content needs instead of one screen: the words take the height they ask, the choices
+   * Grow. The scene has a page as tall as its content needs instead of one screen: the words take the height they ask, the choices
    * stand at the end of the page, and only the picture gives way, to what is left of the first screen. Nothing is squeezed; `crowded` is empty.
    */
   readonly grow?: boolean;

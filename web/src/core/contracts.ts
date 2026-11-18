@@ -1,4 +1,4 @@
-// The kind contract and the shapes the core is called with (PLAN-v3-core 2.1 and 2.3, package PC1). Types and constants only: no behaviour.
+// The kind contract and the shapes the core is called with. Types and constants only: no behaviour.
 //
 // A kind is anything that takes a box. It is written as data in, data out:
 //
@@ -35,7 +35,7 @@ export interface Size2 {
 }
 
 /**
- * Who the screen is for (PLAN REVIEW-generality section 4): a person preference, `adult` by default. It raises the two numbers the legibility
+ * Who the screen is for: a person preference, `adult` by default. It raises the two numbers the legibility
  * invariant enforces, for the stage and for the lesson view alike: the least a word may be set at (`floor`, em height) and the least a target
  * may be (`minTarget`), and the lesson view's type scale. Nothing else about the screen changes.
  */

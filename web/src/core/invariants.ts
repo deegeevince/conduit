@@ -1,4 +1,4 @@
-// The invariants of PLAN-v3-core 2.8, as rules over a census. Report-only: each returns violations and nothing acts on them.
+// The invariants, as rules over a census. Report-only: each returns violations and nothing acts on them.
 // The witness is not the accused: it reads the painter's published views and plan and the resting picture, and shares no code with the
 // layout or the timeline. Rules for later packages (taught is drawn, pure, shell, same score, budget) are not here.
 
@@ -11,7 +11,7 @@ import type { Census, CensusInput, Expected, Leaf } from './census';
 
 /** The smallest text that reads, by screen: one table, the steward's to change. CSS pixels on the screen. */
 export const LEGIBLE = { floor: { phone: 11, desk: 12 }, contrast: 4.5 } as const;
-/** The lens (PLAN-canvas), starting values: the smallest the body text may be fitted to, as a share of its size, by screen; and the most a person may zoom in. */
+/** The lens, starting values: the smallest the body text may be fitted to, as a share of its size, by screen; and the most a person may zoom in. */
 export const VIEW = { floor: { phone: 0.8, desk: 0.6 }, max: 4 } as const;
 /** A finger needs this much, in points. */
 export const TARGET = 44;

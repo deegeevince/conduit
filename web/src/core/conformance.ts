@@ -1,4 +1,4 @@
-// `pnpm kinds`: what the compiler cannot see (PLAN-v3-core 2.3). Every kind's fixtures are drawn under `tsx`, no browser, and held to:
+// `pnpm kinds`: what the compiler cannot see. Every kind's fixtures are drawn under `tsx`, no browser, and held to:
 //
 //   pure        the same arguments twice give the same model, layout, drawing and census
 //   inside      no ink outside the leaf's box

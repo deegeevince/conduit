@@ -1,4 +1,4 @@
-// The document: a tree of parts a mind and a person build together and come back to (PLAN-v3-core 2.1).
+// The document: a tree of parts a mind and a person build together and come back to.
 //
 // This file is the types of it, the fold that makes it from a conversation's log, and `advance`, the one function that writes what the person
 // did. It is shared by the server (which keeps it) and the page (which shows it), so it touches no clock and no DOM and throws on nothing.

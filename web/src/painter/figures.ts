@@ -63,7 +63,7 @@ export interface FigureContext {
   /** a thing that cannot be made is reported here and left out; without it the error is thrown */
   readonly onFault?: (error: unknown, key: string) => void;
   /**
-   * The stage clock T (PLAN-motion), in clock units: where everything with a `period=`, a ride or a carrier is. Absent: the frame has no clock, and what keeps time stands as it
+   * The stage clock T, in clock units: where everything with a `period=`, a ride or a carrier is. Absent: the frame has no clock, and what keeps time stands as it
    * was drawn. A loop with no period is decoration and does not read it.
    */
   readonly motion?: number;
@@ -168,7 +168,7 @@ interface Scn {
   /** a resting picture: no loops, no gestures, nothing that keeps time */
   readonly rest: boolean;
   /**
-   * The stage clock T, in clock units (PLAN-motion): what a loop with a `period=`, a ride and a carrier are performed at. Null: the frame has no clock, and everything
+   * The stage clock T, in clock units: what a loop with a `period=`, a ride and a carrier are performed at. Null: the frame has no clock, and everything
    * that keeps time stands as it was drawn (a draft, a candidate, the snapshot; and every live frame until the page has a clock to give).
    */
   readonly clock: number | null;
@@ -418,7 +418,7 @@ function centreOf(element: ElementSpan, trans: Trans, natural: Pt, sc: Scn): Pt 
       return { x: here.x + (a.x - anchor.x) * (1 - trans.p), y: here.y + (a.y - anchor.y) * (1 - trans.p) };
     }
   }
-  // A move ends inside the picture (PLAN-v2.1, D4): what it carries never leaves the canvas, whatever point was written.
+  // A move ends inside the picture: what it carries never leaves the canvas, whatever point was written.
   // (a stage that carries what a move left has only the point, so a written place is held to the same rule when it puts most of the thing inside)
   // A group sent to a point off the canvas is sent out of it: it runs off whole, and what it left is not there (as the stage it leaves says).
   const leaves = element.figure?.kind === 'group' && trans.to.at !== null && !onCanvas(b, element, sc);
@@ -513,7 +513,7 @@ function keptInside(at: Pt, element: ElementSpan, style: ElementStyle, sc: Scn):
 /** The loops that stand still under reduced motion when they are decoration; one on the stage clock moves exactly as the clock says, and the clock is what holds still. */
 const STILLED_BY_REDUCED: ReadonlySet<ElementStyle['loop']> = new Set(['blink', 'spin', 'bob', 'sway']);
 
-/** How far a chain of pivots carries: a moon on a planet on a star on a galaxy, and so on up to this many links (PLAN-motion: eight, or a ring, and the rest is not carried). */
+/** How far a chain of pivots carries: a moon on a planet on a star on a galaxy, and so on up to this many links (eight, or a ring, and the rest is not carried). */
 const MAX_LINKS = 8;
 
 /**
@@ -1325,7 +1325,7 @@ function bleedRectOf(region: Box, viewport: Viewport, open: OpenEdges): Box {
 const bleedMemo = new WeakMap<readonly Polyline[], Map<string, readonly Polyline[]>>();
 
 /**
- * Bleed is one decision per scene and edge (PLAN-v2.1, D3). An edge of the canvas is open when filled shapes cover the whole of it; then every
+ * Bleed is one decision per scene and edge. An edge of the canvas is open when filled shapes cover the whole of it; then every
  * filled shape lying along it runs on to the edge of the picture's region (never past: the region clips everything drawn on the canvas), so
  * land, water and sky reach the sides of the picture and a shape that only grazes an edge no one else covers stays where it was drawn.
  * Only the points that lie on an edge move, outward; the rest of the outline is the brain's. A gradient runs top to bottom of its own box,

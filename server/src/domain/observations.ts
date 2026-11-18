@@ -1,4 +1,4 @@
-// What the session has seen and been told, as observations (SA3; PLAN-stage section 2). One feed per session: the person's input, the page's
+// What the session has seen and been told, as observations (SA3). One feed per session: the person's input, the page's
 // eyes (`observe` events), the server's refusals and drift, and the engine's lint of the answer the stage left. The turn brief prints its digest
 // (`EYES`); the session log holds each observation as an `obs` record and each turn's attention as an `attention` record.
 //

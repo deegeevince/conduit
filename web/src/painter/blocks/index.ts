@@ -1,4 +1,4 @@
-// The structure engines (PLAN-v2.md, package D). Pure: no DOM, no clock; text
+// The structure engines. Pure: no DOM, no clock; text
 // is sized only through the measurer handed in. Everything is placed in the
 // same stage units as the room it was given (not relative to its corner).
 //

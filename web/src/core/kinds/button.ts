@@ -1,4 +1,4 @@
-// kinds/button.ts: PLAN-v3-core 2.3, package PC1. The `button` control, the control engine of today (`painter/controls/engine.ts`) wrapped.
+// kinds/button.ts: The `button` control, the control engine of today (`painter/controls/engine.ts`) wrapped.
 
 import { seal } from '../seal';
 import { controlKind } from './adapt-control';

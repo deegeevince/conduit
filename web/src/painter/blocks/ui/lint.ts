@@ -1,4 +1,4 @@
-// Sight for screens (PLAN-v2.2 E13, "judged by code"): a short lint over a laid-out screen. It reads the boxes and says
+// Sight for screens: a short lint over a laid-out screen. It reads the boxes and says
 // what a designer's eye would: a target under 44 points, words that do not fit their part, a part outside its screen or
 // its container, siblings on top of each other, an edge off the four-point grid, two primary buttons on one screen, a
 // screen that took too many lines. Pure: it reads the tree the solver placed and the lines the brain wrote.

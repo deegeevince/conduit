@@ -1,4 +1,4 @@
-// The interface tree (PLAN-v2.2 E13): what a mock-up IS, as data, and the reader of the lines that say it.
+// The interface tree: what a mock-up IS, as data, and the reader of the lines that say it.
 //
 // A mock-up is described, not drawn. The brain says what is on each screen, in order, and never where. This file is the
 // words: the devices at their true proportions, the container and the part words, the spacing scale, the tokens a look
@@ -642,7 +642,7 @@ export function unstar(field: string): { readonly text: string; readonly starred
 // ------------------------------------------------------------------ the chapter
 
 /**
- * What the brain is told (PLAN-v2.2 E11, Appendix C): the interface chapter, as the prompt package rides it in the brief
+ * What the brain is told (Appendix C): the interface chapter, as the prompt package rides it in the brief
  * when a message has its cues (mock-up, wireframe, screen, page, app, site, figma). It is written here, beside the words it
  * teaches, so that the two cannot drift: the parts and the variants below are read from the tables above.
  */

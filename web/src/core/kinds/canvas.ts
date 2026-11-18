@@ -1,4 +1,4 @@
-// kinds/canvas.ts: PLAN-v3-core 2.3, package PC1. Free art by coordinates (shapes, sprites, groups, pictures, callouts, the camera): one leaf a
+// kinds/canvas.ts: Free art by coordinates (shapes, sprites, groups, pictures, callouts, the camera): one leaf a
 // scene. Drawn by `painter/figures.ts` and `camera.ts` under the old timeline until PC13.
 
 import { notYet } from './not-yet';

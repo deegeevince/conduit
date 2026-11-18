@@ -1,4 +1,4 @@
-// Entry for bench-lesson.html (PLAN-v3-core WS6): the lesson view with no model and no server. A fixture document is mounted in the
+// Entry for bench-lesson.html: the lesson view with no model and no server. A fixture document is mounted in the
 // sandboxed surface, her state is kept in this page's storage (so a reload restores her place, as the server will), and `window.__lesson`
 // is what a driver reads: the last census, her state, every event and state change.
 //

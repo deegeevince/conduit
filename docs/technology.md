@@ -1,8 +1,8 @@
 # Technology: why it is built this way
 
-This document answers one question: **why does the code have this shape?** What the product is and what was decided about it is in [product.md](product.md). The language is specified in [language.md](language.md). How to run it is in [runbook.md](runbook.md).
+This document answers one question: **why does the code have this shape?** The language is specified in [language.md](language.md). How to run it is in [runbook.md](runbook.md).
 
-> **v2.** The quality and expression round is built and integrated. Sections marked (v2) are what it added; `PLAN-v2.md` records what it measured against the bar. Everything marked here as built is built: no stub remains.
+> **v2.** The quality and expression round is built and integrated. Sections marked (v2) are what it added. Everything marked here as built is built: no stub remains.
 
 ## The shape
 
@@ -126,7 +126,7 @@ Pictures travel beside the streams as ordinary requests: a painting down (`GET`)
 
 **Text.** troika-three-text draws signed-distance-field text. Each *run* (a word) is its own mesh, typeset once; everything that changes per frame is a transform or a uniform. A typed entrance moves a clip rectangle across the run. `RunFrame.reveal` is a share of the run's *width*, which the painter computes from the face's advances, so the renderer needs no metrics.
 
-**Type is measured in one place.** `web/src/fonts/measure.ts` sums advances from a table generated from each font file. The painter lays out with it; the renderer never measures. For that sum to equal what troika draws, **every shipped font file has its `GPOS`, `GSUB` and `GDEF` tables removed** (`web/scripts/strip-font-tables.mjs`): troika applies every kerning and ligature lookup a font offers and has no switch for it. v0 needed this to keep fixed-pitch grids intact; v1 needs it to keep proportional measurement exact. The cost is no kerning, which shows at display sizes; putting it back means a kern-pair table read by both the measurer and the renderer, and is recorded as open in product.md.
+**Type is measured in one place.** `web/src/fonts/measure.ts` sums advances from a table generated from each font file. The painter lays out with it; the renderer never measures. For that sum to equal what troika draws, **every shipped font file has its `GPOS`, `GSUB` and `GDEF` tables removed** (`web/scripts/strip-font-tables.mjs`): troika applies every kerning and ligature lookup a font offers and has no switch for it. v0 needed this to keep fixed-pitch grids intact; v1 needs it to keep proportional measurement exact. The cost is no kerning, which shows at display sizes; putting it back means a kern-pair table read by both the measurer and the renderer, and is left open.
 
 **No glyph may be missing.** troika answers a missing glyph by downloading a fallback font from a public CDN. `foldText` in `web/src/fonts/index.ts` brings all text into the set of characters every face has before it reaches a renderer, and every face added in v1 must cover `GLYPHS`.
 
@@ -256,14 +256,14 @@ The OpenAI adapter and its stand-in were removed in v2.1: every model call is th
 
 ## (v2) The improvement loop
 
-`pnpm improve` (`server/src/tools/improve.ts`, `server/src/loop/`). The steps and who does each are in product.md. What is built as code rather than asked of a model, in `server/src/loop/guard.ts`:
+`pnpm improve` (`server/src/tools/improve.ts`, `server/src/loop/`). What is built as code rather than asked of a model, in `server/src/loop/guard.ts`:
 
 - `PROTECTED_PATHS` and `touchesProtected`: the batteries, the judge, the runner, the guard itself, the look-and-fix policy, the changelog, `package.json`.
 - `SEALED_PATHS`: what a builder's worktree is made without.
 - `leaksBattery`: battery text in source.
 - `decide(proposal, before, after)`: the rule for keeping an experiment, with every reason in words for the changelog.
 
-A builder is a `claude -p` process with tools. In v2 it is **not** confined: it has blanket read, edit and write with deny rules for the protected paths only, its worktree sits beside a tree that holds the sealed set, and it may run scripts it can edit. v2.1 moves it to an exported tree outside the repository under the CLI's restricted mode (`PLAN-v2.1.md`, package I); the critic and the reviewer have no tools that write. All of them are on the owner's login. The budget is counted in the dollars the CLI reports for each call: on a subscription that is a measure of use, not a bill, and it is the one number every call returns.
+A builder is a `claude -p` process with tools. In v2 it is **not** confined: it has blanket read, edit and write with deny rules for the protected paths only, its worktree sits beside a tree that holds the sealed set, and it may run scripts it can edit. v2.1 moves it to an exported tree outside the repository under the CLI's restricted mode; the critic and the reviewer have no tools that write. All of them are on the owner's login. The budget is counted in the dollars the CLI reports for each call: on a subscription that is a measure of use, not a bill, and it is the one number every call returns.
 
 ## (v2) Taste
 

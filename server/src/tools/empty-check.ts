@@ -1,4 +1,4 @@
-// pnpm check's fb-075 / fb-008 group: a turn that drew nothing is told so and asked once more (docs/feedback.md).
+// pnpm check's fb-075 / fb-008 group: a turn that drew nothing is told so and asked once more.
 //
 //   fb-075  the brain's first turn called the canvas tools four times and wrote "ok": 0 lines, an empty stage, after 38 s
 //   fb-008  the brain described a slider in prose, drew nothing, and its markdown bullets were all refused

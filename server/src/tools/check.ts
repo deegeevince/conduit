@@ -38,11 +38,11 @@
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
 //                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
 //
-//   fb-023, fb-002     the demo audit's checks with no browser (`pnpm timeline demos`, `pnpm demo-checks`), named by the backlog row they guard (docs/feedback.md): the reading rule, a chart that is what it says, a control
+//   fb-023, fb-002     the demo audit's checks with no browser (`pnpm timeline demos`, `pnpm demo-checks`), named by the backlog row they guard: the reading rule, a chart that is what it says, a control
 //                      that changes something; a drawing past its canvas, parts that come apart in a move, a morphed shape that is moved. Their page-side twins run in every demo scene (server/src/tools/demo-check.ts):
 //                      fb-004 the tour's bar (a tour demo plays with it up, and nothing meets it), fb-023 what the scene wrote is on the stage, fb-030 no line let go, fb-037 a label on the side it was written, fb-005 the
 //                      crosshair's tag
-//   showcase           "What Conduit can do" (PLAN-catalogue.md, showcase-check.ts): every live page of language/demos/showcase/*.series is played on a replay server that has a recorded case, one
+//   showcase           "What Conduit can do" (showcase-check.ts): every live page of language/demos/showcase/*.series is played on a replay server that has a recorded case, one
 //                      unit a category on each screen, and judged like a demo; each page's `expect` ids are on stage with ink; the pages with a hand are worked with real input (a drag, a tap
 //                      on a pick and a switch, a typed prompt, a tap on a choice, a right answer, an undo); the table and the painter agree both ways (`showcase: N live, M not yet (...)`)
 //
@@ -433,7 +433,7 @@ class Screen {
     const add = (check: string, verdict: Verdict, detail: string): void => talk.add(results, check, verdict, detail);
     await checkInk(tab, add, picture, answer.live, tab.dpr);
     await checkTakeover(tab, add);
-    // what the scene's own lines wrote, and the chrome that stands over the stage (docs/demo-audit.md part 4; server/src/tools/demo-check.ts)
+    // what the scene's own lines wrote, and the chrome that stands over the stage (server/src/tools/demo-check.ts)
     if (options.tourBar !== undefined) {
       const found = await checkTourBar(tab, options.tourBar);
       add('fb-004-tour-bar', found.length === 0 ? 'PASS' : 'FAIL', found.length === 0 ? (options.tourBar ? 'the tour bar is up and nothing on the stage or over it meets it' : 'no tour bar here') : found.join('; '));
@@ -943,7 +943,7 @@ class Screen {
         break;
       }
       case 'fb-058': {
-        // docs/feedback.md fb-058: the column sum is the painter's `math` block, laid out as on paper; the brain wrote no digit, so no word on stage is a bare number
+        // fb-058: the column sum is the painter's `math` block, laid out as on paper; the brain wrote no digit, so no word on stage is a bare number
         // and none holds what the open block seals; the sum the person is to work stands with its boxes empty, and an ask that waits draws nothing
         const blocks = live.filter((e) => e.kind === 'structure' && e.phase === 'on' && /^written method column/.test(e.text) && e.box.width > 50 && e.box.height > 50);
         if (blocks.length !== 2) problems.push(`${blocks.length} of the 2 written methods (the worked example and her own sum) are on stage`);
@@ -961,7 +961,7 @@ class Screen {
         break;
       }
       case 'fb-059': {
-        // docs/feedback.md fb-059: a title with no at= in a free scene stands at the top of the stage, over nothing
+        // fb-059: a title with no at= in a free scene stands at the top of the stage, over nothing
         const title = live.find((e) => e.id === 't1');
         const rest = live.filter((e) => e.id !== 't1' && e.phase === 'on' && e.box.width > 0 && e.box.height > 0);
         const view = await tab.eval<{ h: number }>('({ h: innerHeight })');
@@ -977,7 +977,7 @@ class Screen {
         break;
       }
       case 'fb-060': {
-        // docs/feedback.md fb-060: asks 2 and 3 wait for ask 1, so they draw nothing: not on stage as controls, no number, no blank, no box
+        // fb-060: asks 2 and 3 wait for ask 1, so they draw nothing: not on stage as controls, no number, no blank, no box
         const controls = await tab.eval<{ id: string; locked: boolean; parts: string[] }[]>(`window.__stage.controls().filter((c) => c.ask).map((c) => ({ id: c.id, locked: c.askState.locked, parts: c.parts.map((p) => p.part) }))`);
         const waiting = controls.filter((c) => c.locked);
         if (waiting.length > 0) problems.push(`${waiting.length} ask(s) that wait are drawn: ${waiting.map((c) => c.id).join(', ')}`);
@@ -990,7 +990,7 @@ class Screen {
         break;
       }
       case 'fb-061': {
-        // docs/feedback.md fb-061: `is=6,281,6` (the answer with its thousands comma, and a step of the working) plays as an ask for 6281, and the hint that names a step is kept
+        // fb-061: `is=6,281,6` (the answer with its thousands comma, and a step of the working) plays as an ask for 6281, and the hint that names a step is kept
         // (the turn holds every scene's lines, and the ids repeat from one scene to the next: only this scene's own are read)
         const whole = await tab.eval<string[]>('window.__stage.lines().map((l) => l.text)');
         const lines = whole.slice(Math.max(0, whole.findIndex((line) => /^scene fb-061\b/.test(line))));
@@ -1072,7 +1072,7 @@ class Screen {
         break;
       }
       case 'formula': {
-        // PLAN-maths M7: a typeset formula. KaTeX set it (the page measured it), the box has ink in it, the fraction bar is drawn (the longest unbroken run of ink in the box of the second,
+        // A typeset formula. KaTeX set it (the page measured it), the box has ink in it, the fraction bar is drawn (the longest unbroken run of ink in the box of the second,
         // which no glyph makes), and its MathML is in the text layer, with the TeX it was written in. KaTeX came as a lazy chunk with its fonts, and not in the main one.
         interface Typeset { readonly id: string; readonly tex: string; readonly box: { x: number; y: number; width: number; height: number }; readonly opacity: number; readonly set: boolean; readonly fault: string | null }
         const formulas = await tab.eval<Typeset[]>('window.__stage.formulas()');
@@ -1155,7 +1155,7 @@ class Screen {
   }
 
   /**
-   * PLAN-maths M7: KaTeX is a chunk of its own. The page fetched it (with its stylesheet and a font) because a formula was asked for, and the main chunk, with the files it loads
+   * KaTeX is a chunk of its own. The page fetched it (with its stylesheet and a font) because a formula was asked for, and the main chunk, with the files it loads
    * at once, holds none of it: its error text and its fonts are not in them.
    */
   private async katexLoad(tab: Tab): Promise<string[]> {
@@ -1838,9 +1838,9 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     units.push(screenUnit('welcome-reduced-motion', 25, [], (run) => run.welcomeScene(true)));
     units.push(screenUnit('problems', 30, [], (run) => run.problemScenes()));
     units.push(screenUnit('follow', 45, [], (run) => run.followScene()));
-    // fb-001 (docs/feedback.md): code blocks that did not render in the tour's code chapter. `--only fb-001` is the code demo's judging.
+    // fb-001: code blocks that did not render in the tour's code chapter. `--only fb-001` is the code demo's judging.
     demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, name === 'code' ? ['fb-001'] : [], (run) => run.demoScenes([name], index === 0))));
-    // fb-058 to fb-061 (docs/feedback.md): the big-numbers maths turn. `--only fb-059` is the hard group's judging of its own scene (fb-060, fb-061 and fb-058 likewise; the ask and maths groups too)
+    // fb-058 to fb-061: the big-numbers maths turn. `--only fb-059` is the hard group's judging of its own scene (fb-060, fb-061 and fb-058 likewise; the ask and maths groups too)
     units.push(screenUnit('demo-hard', 60, ['fb-058', 'fb-059', 'fb-060', 'fb-061', 'fb-071', 'orbit-lap'], (run) => run.hardScenes()));
   }
   for (const screen of LENS_SCREENS) {
@@ -2053,7 +2053,7 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       checkLines(out, results);
     },
   });
-  // fb-062 (docs/feedback.md): the loop missed a title over text and accepted a fix that moved things off the canvas. `--only fb-062` runs just this.
+  // fb-062: the loop missed a title over text and accepted a fix that moved things off the canvas. `--only fb-062` runs just this.
   units.push({
     name: 'fb-062',
     needs: 'none',
@@ -2064,7 +2064,7 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       checkLines(out, results);
     },
   });
-  // fb-075 and fb-008 (docs/feedback.md): a turn that drew nothing is told so and asked once more; markdown bullets are said, not refused. `--only fb-075` runs just this.
+  // fb-075 and fb-008: a turn that drew nothing is told so and asked once more; markdown bullets are said, not refused. `--only fb-075` runs just this.
   units.push({
     name: 'fb-075',
     also: ['fb-008'],
@@ -2086,7 +2086,7 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       checkLines(out, results);
     },
   });
-  // the demo audit's checks that read the schedule and the painter's boxes with no browser, named by the backlog row they guard (docs/demo-audit.md part 4)
+  // the demo audit's checks that read the schedule and the painter's boxes with no browser, named by the backlog row they guard
   units.push({
     name: 'fb-023',
     also: ['fb-028', 'fb-033', 'fb-042'],
@@ -2121,7 +2121,7 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     needs: 'none',
     weight: 8,
     run: async (_servers, out) => {
-      out.lines.push('\nmotion (PLAN-motion step 2, bench half: centres read from the frames at chosen T, to 1e-6; no browser)');
+      out.lines.push('\nmotion (bench half: centres read from the frames at chosen T, to 1e-6; no browser)');
       checkLines(out, await motionGroup(plain));
     },
   });
@@ -2154,7 +2154,7 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       sceneLines(out, scenes);
     },
   });
-  // "What Conduit can do" (PLAN-catalogue.md, showcase-check.ts): the table held to the painter once, and each category's pages played and judged on each screen, one unit a category so they
+  // "What Conduit can do" (showcase-check.ts): the table held to the painter once, and each category's pages played and judged on each screen, one unit a category so they
   // run side by side. SHOWCASE_ONLY=sum,type plays just those pages; `--only showcase-numbers` is one category.
   const reader = readShowcase();
   const only = (process.env['SHOWCASE_ONLY'] ?? '').split(',').map((id) => id.trim()).filter((id) => id !== '');

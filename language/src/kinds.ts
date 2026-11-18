@@ -1,4 +1,4 @@
-// The language's half of the kind contract (PLAN-v3-core 2.3, package PC1): what each kind is called, what it holds, how the brain is
+// The language's half of the kind contract: what each kind is called, what it holds, how the brain is
 // taught it and how it is told in a few words. It lives here so the server builds the prompt and the brief with no painter.
 //
 // A KIND is anything that takes a box on the stage: words, a choice, the free canvas, a structure, a control. The painter's half
@@ -173,7 +173,7 @@ export const LEXICON: Lexicon = {
   },
   math: {
     id: 'math',
-    // PLAN-maths M5 teaches it; until then the brief never offers it (the cue never holds)
+    // The brief never offers it until it is taught (the cue never holds)
     teach: { where: 'chapter', form: form('math'), gloss: gist('math'), cue: () => false },
     describes: 'summary',
     describe: (element) => describeFigure(element.figure ?? { kind: 'group' }),

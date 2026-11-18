@@ -418,10 +418,10 @@ function decoderChecks(): void {
   expect('ink on nothing folds to nothing', anchorsOfMarks({}), []);
 }
 
-/** Through `LineReader`, the normaliser and `serializeLine`: only once the hunks in anchors-AN1-language.patch are applied. */
+/** Through `LineReader`, the normaliser and `serializeLine`: only once `parseLine` knows the anchor words. */
 function lineChecks(): boolean {
   if (parseLine('anchor ^terms on=u3 page=2 | net of GST').kind !== 'line') {
-    process.stdout.write('  anchor checks: parseLine does not know the anchor words yet (apply anchors-AN1-language.patch); the checks through it were skipped\n');
+    process.stdout.write('  anchor checks: parseLine does not know the anchor words yet ; the checks through it were skipped\n');
     return true;
   }
   const through = (raw: string): { written: string; again: string; verb: string } | { why: string } => {
@@ -433,7 +433,7 @@ function lineChecks(): boolean {
     const again = parseLine(written);
     return { written, again: again.kind === 'line' ? serializeLine(again.line) : 'does not parse', verb: normalized.line.verb };
   };
-  // every example line of PLAN-anchors section 1 and 4, and the old meanings of `link` and `move`
+  // every example line of the anchors design, and the old meanings of `link` and `move`
   const examples: readonly string[] = [
     'anchor ^terms on=u3 page=2 | net of GST',
     'anchor ^logo on=u3 page=2 box=0.12,0.4,0.3,0.08 | the logo',

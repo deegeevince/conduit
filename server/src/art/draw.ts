@@ -1,4 +1,4 @@
-// `draw` on the server (PLAN-art.md, section 5): a line of intent becomes a group and its parts, or a quiet placeholder.
+// `draw` on the server: a line of intent becomes a group and its parts, or a quiet placeholder.
 //
 // `planDraw` is pure: it takes the line, what the stage already holds, the look and the shelf, and gives back the lines to put on stage (a `group`
 // and the parts `in=` it, each `<id>-<part>`), plus what happened for the log and a note for the brain's next look. The conductor ingests the

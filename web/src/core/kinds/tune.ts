@@ -1,4 +1,4 @@
-// kinds/tune.ts: PLAN-v3-core 2.3, package PC1. The `tune` engine (a piano roll for ABC rows) wrapped; its code stays in `painter/blocks/tune.ts`.
+// kinds/tune.ts: The `tune` engine (a piano roll for ABC rows) wrapped; its code stays in `painter/blocks/tune.ts`.
 
 import { layoutTune } from '../../painter/blocks/tune';
 import { seal } from '../seal';

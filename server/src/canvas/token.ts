@@ -1,4 +1,4 @@
-// The bearer tokens of the canvas service (SA4; PLAN-stage section 3). One is minted for each warm process, is bound to the one conversation that
+// The bearer tokens of the canvas service (SA4). One is minted for each warm process, is bound to the one conversation that
 // process serves, and is revoked when the process is let go. A token is never logged and never leaves the 0600 file the process was started with.
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';

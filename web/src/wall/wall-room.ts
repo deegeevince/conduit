@@ -1,4 +1,4 @@
-// The wall in the main view (PLAN-wall WL3, steward decision 8): `/?wall=1`. Every answer that draws becomes a frame on one endless canvas; the
+// The wall in the main view (steward decision 8): `/?wall=1`. Every answer that draws becomes a frame on one endless canvas; the
 // camera is a `LensRig` and travels it with the WL2 hands.
 //
 //   what draws    the frame in focus, at full size and at rest, is the live stage (the painter, untouched). Every other frame is its picture: the

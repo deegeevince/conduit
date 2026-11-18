@@ -1,4 +1,4 @@
-// An art sheet: one finished drawing of a named thing, as Series part lines (PLAN-art.md, section 6, "The sheet and the shelf").
+// An art sheet: one finished drawing of a named thing, as Series part lines.
 //
 // A sheet is JSON in a 100 x 100 box centred on 0,0, with a ground line, its parts back to front, colour tokens (the five roles of a look and up
 // to three named slots from the house palette), and the facts about it: subject, pose, view, facing, how it was made, its licence, its score.

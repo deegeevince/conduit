@@ -2,7 +2,7 @@
 
 This document answers one question: **what must things on the stage look and move like, and what must they never be?** The values themselves (hex codes, amounts, recipes) live in `language/src/vocabulary.ts` (what a look is, in the brain's words) and `web/src/looks/*.ts` (what the painter adds); this file says why they are what they are and specifies the part that cannot be data.
 
-> Sections marked **(v2)** specify what the quality and expression round built; they are as it runs, except where `PLAN-v2.1.md` says a rule was broken in the building (text laid over structures and charts, chart type at a fixed size, shapes that run out of a picture). v2.1's own rules (one layout, frames, the foot for choices, code blocks, decks, the text layer) are specified in `PLAN-v2.1.md`, section 2, until the round ships and they move here.
+> Sections marked **(v2)** specify what the quality and expression round built; they are as it runs, except where a rule was broken in the building (text laid over structures and charts, chart type at a fixed size, shapes that run out of a picture). v2.1's own rules (one layout, frames, the foot for choices, code blocks, decks, the text layer) are followed by the code and described in the sections below.
 
 ## What a look is
 
@@ -301,7 +301,7 @@ A field is hundreds or thousands of small things and must read as air, not as an
 ## Paintings
 
 - **The sketch is the picture until there is a better one.** Nothing marks it as unfinished except, while a painting is on its way, the faintest breathing of the picture's edge. No spinner, no skeleton, no "generating" text.
-- **A painting develops.** It is revealed through a noise threshold over the sketch, with a soft wet edge, over about two and a half seconds, on ambient time. Never a cross-fade, never a pop. (Growing it outward from the sketch's lines is wanted and not built; see product.md.)
+- **A painting develops.** It is revealed through a noise threshold over the sketch, with a soft wet edge, over about two and a half seconds, on ambient time. Never a cross-fade, never a pop. (Growing it outward from the sketch's lines is wanted and not built.)
 - **It belongs to the stage.** It is on a layer, moves under the camera, takes the look's surface effects (grain, halftone, paper), and takes a mask: `round`, `circle`, `soft` (edges fade), `torn`.
 - **If none comes, nothing happens.** The sketch stays; the edge stops breathing. The stage never apologises.
 

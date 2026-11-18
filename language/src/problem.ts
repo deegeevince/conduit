@@ -1,5 +1,5 @@
 // A maths question the person answers herself. There is no verb and no screen of its own: the brain lays out how it is worked out (a column sum, a take-away or a
-// times is a `math` line, PLAN-maths) and writes one `ask` for a question in words, like anything else on the canvas. An old `problem` line (logs, replays) still
+// times is a `math` line) and writes one `ask` for a question in words, like anything else on the canvas. An old `problem` line (logs, replays) still
 // plays: the normalizer makes it an `ask` (`normalize.ts`). This file holds the cue (when the words are a maths question), when the brief carries the short chapter
 // (`carriesMaths`) and the chapter itself.
 
@@ -70,7 +70,7 @@ export function carriesMaths(context: Pick<TurnContext, 'stage' | 'techniques' |
 
 /**
  * The chapter the brief carries for a maths question (typed, or in a photo); short on purpose: the drawing and the `ask` are taught elsewhere. A column sum, a
- * take-away or a times is one `math` line, never digits the brain places by hand (PLAN-maths M5): the painter works every digit, so the carries line up and the
+ * take-away or a times is one `math` line, never digits the brain places by hand: the painter works every digit, so the carries line up and the
  * working cannot be wrong or hold the answer. `problem` and the old workspace are not taught; an old `problem` line still plays (normalize.ts).
  */
 export const MATHS_CHAPTER = [

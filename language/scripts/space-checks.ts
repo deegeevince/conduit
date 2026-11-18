@@ -1,4 +1,4 @@
-// Depth as pure geometry (PLAN-depth.md, D1): lifting, turning, projecting, resampling, cutting at the limb and ordering, with no browser and no drawing.
+// Depth as pure geometry: lifting, turning, projecting, resampling, cutting at the limb and ordering, with no browser and no drawing.
 // Run by `pnpm timeline`. The hand's solver (handle.ts) has its own file; `spaceChecks` runs it after these so the one line in timeline.ts covers both.
 import { clipFront, depthOf, lift, project, resampleOnSphere, turn } from '../src/space';
 import type { P3, SpaceFrame, SpaceView } from '../src/space';

@@ -1,4 +1,4 @@
-// The richer parts (PLAN-v2.2 F1, "mock-up fidelity"): what makes a mock-up read as the kind of app it is. A media grid of cover tiles, a carousel that moves under a
+// The richer parts: what makes a mock-up read as the kind of app it is. A media grid of cover tiles, a carousel that moves under a
 // finger, a player bar, chat bubbles, a map card, a stat card, a list with avatars, a segmented header. Each is one line of the brain's text and owns its words (a
 // tile's title and subtitle, a bubble's sentence, a person's name), is laid out by the same flex solver as every other part, and takes its colours, radii and type from
 // the tokens, so a dark theme or a serif is all of them at once. The ones that are live say how: a player's play button flips, its bar is scrubbed; a carousel is

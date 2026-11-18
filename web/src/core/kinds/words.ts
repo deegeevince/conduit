@@ -1,4 +1,4 @@
-// kinds/words.ts: PLAN-v3-core 2.3, package PC1. Words: `say`, a heading, a caption. Today the timeline sets them (`painter/timeline.ts`), which
+// kinds/words.ts: Words: `say`, a heading, a caption. Today the timeline sets them (`painter/timeline.ts`), which
 // this package must not touch; PC6 builds the `reflow` leaf and the stage that holds it.
 
 import { notYet } from './not-yet';

@@ -1,4 +1,4 @@
-# It keeps going: the pages for what stays across turns (PLAN-catalogue.md). `changes` and `back` take several turns and keep them in the table (`turns`).
+# It keeps going: the pages for what stays across turns. `changes` and `back` take several turns and keep them in the table (`turns`).
 # Undo is a tap on a chip and the language view is a tap on a button, so neither has a page here.
 
 # changes: the boat is drawn once; asking for a bigger sail sends one line, and nothing else is redrawn.

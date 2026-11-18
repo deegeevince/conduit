@@ -50,17 +50,17 @@ import { stillSide, wholePage } from './view';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
-/** True once `notePass` answers `drafted` with a draft report (PLAN-v2.md, package T). Until then the server is told not to wait for one. */
+/** True once `notePass` answers `drafted` with a draft report. Until then the server is told not to wait for one. */
 const DRAFTS_READY = true;
 /** True: a `candidate` event is tried on a copy of the open turn's score and answered with a `draft` (sight, placed boxes, `content`, a picture) for its pass, none of it shown. */
 const CANDIDATES_READY = true;
 /** Sequence numbers a candidate's lines carry on the copy of the score: far above any a turn will reach, so they never meet a real one. */
 const CANDIDATE_SEQ = 1_000_000;
-/** STUB(PLAN-v2.1 package T2): true once a `deck` turn stops at each slide and `Painter.slide` steps through them. */
+/** STUB: true once a `deck` turn stops at each slide and `Painter.slide` steps through them. */
 const DECKS_READY = false;
 /** True: `pic … from=<upload id>` draws the user's photo, fetched from `options.uploadUrl` (the session's own `/api/sessions/<id>/uploads/<upload id>`). */
 const UPLOADS_READY = true;
-/** STUB(PLAN-v2.1 part two): true once `say href=` is drawn as a link the viewer can follow. The brain is taught `href` only when it is. */
+/** STUB: true once `say href=` is drawn as a link the viewer can follow. The brain is taught `href` only when it is. */
 const LINKS_READY = false;
 /** ms a chart waits for the rows it draws by reference before it is shown without them */
 const DATA_WAIT_MS = 20_000;
@@ -1160,7 +1160,7 @@ export function createPainter(options: PainterOptions): Painter {
     return report;
   };
 
-  /** PLAN-canvas step 0: what the scene at `at` gave up to fit the screen, from the layout's facts and the app host's (an app shown smaller than its natural size) */
+  /** What the scene at `at` gave up to fit the screen, from the layout's facts and the app host's (an app shown smaller than its natural size) */
   const squeezeNow = (at: number): Squeeze => {
     const apps = (appHost?.probe() ?? []).flatMap((probe) => (probe.fit !== undefined && probe.fit < 1 ? [{ key: probe.key, scale: probe.fit }] : []));
     return squeezeOf({ ...timeline.squeezeAt(at), apps });
@@ -1554,7 +1554,7 @@ export function createPainter(options: PainterOptions): Painter {
     emit('controls', views);
   };
 
-  // Written methods (PLAN-maths M3): the cells a hand writes in, as the access layer and the stage's taps find them
+  // Written methods: the cells a hand writes in, as the access layer and the stage's taps find them
   const mathBox = (placed: { readonly boxes: ReadonlyMap<string, Box>; readonly ps: number }, name: string): Box | null => {
     const b = placed.boxes.get(name);
     return b === undefined ? null : { x: b.x * placed.ps + viewport.width / 2, y: b.y * placed.ps + viewport.height / 2, width: b.width * placed.ps, height: b.height * placed.ps };
@@ -1622,7 +1622,7 @@ export function createPainter(options: PainterOptions): Painter {
     }));
   };
 
-  // Text out (PLAN-v2.1 T2): the words on stage and where they are, for the chrome's text layer. Sent when the stage has come to rest and what
+  // Text out: the words on stage and where they are, for the chrome's text layer. Sent when the stage has come to rest and what
   // is on it has changed, and once, empty, when it begins to move: the layer is not there to be dragged over while things slide.
   const still = { time: Number.NaN, camera: '', width: 0, height: 0, frames: 0, hash: '', sent: '' };
   const announceText = (): void => {
@@ -1925,7 +1925,7 @@ export function createPainter(options: PainterOptions): Painter {
         noteFault(error, 'look');
       }
     },
-    // STUB(PLAN-v2.1 package T2): step a deck to a slide.
+    // STUB: step a deck to a slide.
     slide(_to) {},
     notePass(id, pass, state) {
       const open = turn;

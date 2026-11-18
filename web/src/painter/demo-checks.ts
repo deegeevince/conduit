@@ -10,7 +10,7 @@
 //   fb-050  A shape said twice and then moved: a move sends the centre of the outline that is drawn to the point it names, after any morph (measured from the outline it entered with, it
 //           landed as far from its point as the two centres were apart). Played as a case of its own.
 //
-// docs/demo-audit.md part 4 gives the classes. The scripts to read come in from the runner (language/scripts/demo-checks.ts), which can read files; this file is pure.
+// The scripts to read come in from the runner (language/scripts/demo-checks.ts), which can read files; this file is pure.
 import { CANVAS, cutScenes, MEMORY_STEPS, playSource } from '@conduit/language';
 import type { ElementSpan, SceneCut } from '@conduit/language';
 import { canvasBoxOf, sceneCanvasOf } from './figures';

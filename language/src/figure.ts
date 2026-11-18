@@ -1,4 +1,4 @@
-// FG2. The `figure` kit's words (PLAN-visuals 2(a)): what the brain writes, and the typed input the painter's figure engine takes.
+// FG2. The `figure` kit's words: what the brain writes, and the typed input the painter's figure engine takes.
 //
 //   figure heart cutaway | How the heart pumps blood
 //   poly ra smooth 24,30 38,26 42,40 30,46 in=body fill=blue label="right atrium"

@@ -1,4 +1,4 @@
-// The census of the lesson (PLAN-v3-core 2.8): what is on screen as data, read from the DOM of the surface by the surface, and posted up.
+// The census of the lesson: what is on screen as data, read from the DOM of the surface by the surface, and posted up.
 // Words with their size and contrast, every region a hand can work with its size, the question card, the steps drawn against the steps
 // shown, the pictures and their share of the view, and the no-spoiler test: any answer of an open ask found in a word on screen.
 

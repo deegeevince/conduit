@@ -1,4 +1,4 @@
-// The pen on a document (PLAN-v3-core: the ink module on the lesson's writing slot). The lesson draws a blank paper (`data-ink-slot`) and tells the
+// The pen on a document (the ink module on the lesson's writing slot). The lesson draws a blank paper (`data-ink-slot`) and tells the
 // page where it is (`slot`, in the frame's own pixels); this lays the ink module's `overlayOn` over that rectangle, with one region, `answer`, and
 // `on {node, ask}`. A hand drawn there is read by the server (`readInk`: a cheap model only transcribes), and the words go back to the lesson as her
 // try, where the document's own matcher says whether it is right. Nothing here knows a worksheet: any ask with a slot gets a pen.

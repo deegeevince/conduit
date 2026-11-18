@@ -7,7 +7,7 @@
 // It lays out every structure in every worked example on disk (the technique
 // seed, the demos, the prompt, the docs) in nine looks at both screens, then
 // thousands of generated ones, and counts: overlapping text, connectors
-// through nodes, crossed labels (row 4 of PLAN-v2.md), time, stability under
+// through nodes, crossed labels, time, stability under
 // an appended node, and the same for callouts.
 
 import { EMPTY_STAGE, LineNormalizer, LineReader, PROMPT_EXAMPLE_STRUCTURE, PROMPT_EXAMPLES, SIZE_SCALE, TurnScore } from '@conduit/language';

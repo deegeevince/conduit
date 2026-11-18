@@ -1,4 +1,4 @@
-// A typeset formula as the painter knows it (PLAN-maths M7). The painter is pure and sets no TeX: KaTeX sets it, in the browser, as a lazy chunk, and the page
+// A typeset formula as the painter knows it. The painter is pure and sets no TeX: KaTeX sets it, in the browser, as a lazy chunk, and the page
 // measures what it set. So the painter asks here for a formula's size, in ems of the font it will be set at, and is told when the page knows more:
 //
 //   facts(tex, display)   what is known of a formula: its size, or the fault KaTeX found. Until the page has measured it, an estimate from the characters

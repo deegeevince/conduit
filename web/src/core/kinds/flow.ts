@@ -1,4 +1,4 @@
-// kinds/flow.ts: PLAN-v3-core 2.3, package PC1. The `flow` engine (steps joined by arrows) wrapped; its code stays in `painter/blocks/flow.ts`.
+// kinds/flow.ts: The `flow` engine (steps joined by arrows) wrapped; its code stays in `painter/blocks/flow.ts`.
 
 import { layoutFlow } from '../../painter/blocks/flow';
 import { seal } from '../seal';

@@ -1,4 +1,4 @@
-// pnpm census-replay: a logged turn, put through the census and the invariants (PLAN-v3-core 2.8, package LP1). Report-only.
+// pnpm census-replay: a logged turn, put through the census and the invariants. Report-only.
 //
 //   tsx src/tools/census-replay.ts <log> [turn ...] [--all] [--screen 1280x720] [--screen 390x844] [--json <file>] [--web <url>] [--data <dir>]
 //

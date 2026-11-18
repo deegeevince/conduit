@@ -1,4 +1,4 @@
-// What KaTeX set, as a list of things to draw (PLAN-maths M7). KaTeX sets a formula as HTML in the browser's own layout; the page measures that and reads the
+// What KaTeX set, as a list of things to draw. KaTeX sets a formula as HTML in the browser's own layout; the page measures that and reads the
 // boxes of its glyphs and the rules and paths between them off it (`typeset.ts`). This is the list, and the one way of putting it on a 2D canvas: the WebGL
 // renderer shows that canvas as a texture, and the vector export embeds it as an image. Everything is in ems of the container the formula was set in, with the
 // formula's own top left at the origin, so the same list is drawn at any size, in any colour.

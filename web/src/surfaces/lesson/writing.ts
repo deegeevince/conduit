@@ -1,4 +1,4 @@
-// The writing area: where a hand answers an ask. The ink module (PLAN-v3-core, `web/src/ink/**`, built beside this) is a pen area over a part
+// The writing area: where a hand answers an ask. The ink module (`web/src/ink/**`, built beside this) is a pen area over a part
 // that reads what is written; it lands as a module of its own and plugs in here. Until then the typed field is the area: a real input with
 // the number keys on a phone. The container carries `data-ink-slot` with the part's id, so the ink module finds the place and a driver can too.
 

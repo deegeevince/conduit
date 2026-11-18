@@ -1,4 +1,4 @@
-// Shading from a hue (PLAN-visuals 2(a)/(d)): each fill gets a darker outline of the same hue, a top light and a contact shadow, derived with
+// Shading from a hue: each fill gets a darker outline of the same hue, a top light and a contact shadow, derived with
 // `looks/colour-math.ts`, so a brain writes `fill=blue` and the kit does the arithmetic. A fill is also held apart from the ground (a contrast the
 // look's own gamut can show), and every colour is brought into the look's gamut, so a one-phosphor tube still gets a light and a shade.
 // Pure: no DOM, no clock.
@@ -129,7 +129,7 @@ export function shadeFor(hue: string | undefined, look: FigureLook): Shade {
 export const shadowInk = (look: FigureLook): Colour => within(mix(look.ground, '#000000', 0.7), look.gamut);
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Light and shade for every drawn shape (PLAN-art step 1), behind `?shade=1` and a look that wants it.
+// Light and shade for every drawn shape, behind `?shade=1` and a look that wants it.
 
 let on = /[?&]shade=(1|true)(&|$)/.test((globalThis as { location?: { search?: string } }).location?.search ?? '');
 

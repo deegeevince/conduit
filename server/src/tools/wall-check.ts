@@ -1,4 +1,4 @@
-// pnpm wall-check: the wall in the main view (PLAN-wall WL3), proved in a real browser against a running server with a real brain.
+// pnpm wall-check: the wall in the main view, proved in a real browser against a running server with a real brain.
 //
 //   pnpm wall-check --url http://127.0.0.1:4997 [--out <dir>] [--screens 390x844,1280x720] [--throttle 4] [--only converse,off,reduced]
 //

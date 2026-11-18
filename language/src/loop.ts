@@ -1,4 +1,4 @@
-// The loop's wire types: what the invariants say about a stage, and the decoders that read it back (PLAN-v3-core 2.8, 2.9; package LP1).
+// The loop's wire types: what the invariants say about a stage, and the decoders that read it back (package LP1).
 // Report-only: nothing here changes what is drawn. Shared by the page (which produces violations) and the server (which will class them).
 // Not yet exported from `index.ts` (another package's file): the page and the tools reach it by path until the integrator adds `export * from './loop'`.
 

@@ -1,4 +1,4 @@
-// kinds/figure.ts: PLAN-visuals 2(a), package FG2. The `figure` kind: a labelled drawing with parts that label themselves, routes along them
+// kinds/figure.ts: The `figure` kind: a labelled drawing with parts that label themselves, routes along them
 // and steps that light them in turn. The engine is pure and lives in `painter/blocks/figure/`; this file is its `Kind`.
 //
 //   model    the typed `FigureInput` and the step a hand is at (0 is rest). No time, no room.

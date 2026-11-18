@@ -1,4 +1,4 @@
-// A small MCP server over streamable HTTP, written by hand (SA4; PLAN-stage section 3): `initialize`, `notifications/initialized` (202),
+// A small MCP server over streamable HTTP, written by hand (SA4): `initialize`, `notifications/initialized` (202),
 // `tools/list`, `tools/call`, and a JSON-RPC error for every other method. No SSE: plain JSON answers are enough for the CLI (measured, SA0).
 // What the CLI sends, from SA0's findings: `server/discover` (answer -32601, not a transport error), `initialize` (protocol 2025-11-25, echoed),
 // `notifications/initialized`, a GET for a server stream (405), `tools/list` and `tools/call`.

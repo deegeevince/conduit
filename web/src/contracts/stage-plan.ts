@@ -42,7 +42,7 @@ export interface StagePlan {
   readonly foot: Box | null;
   /** keys that could not be given their least size: the painter says so in sight (`crowded`) and, for words, retires the oldest as it does today */
   readonly crowded: readonly string[];
-  /** PLAN-canvas step 2. The page this scene is laid out on when it has grown past the screen: its top-left is the screen's, its width the screen's, its height what the content needs. Absent: the screen is the page. */
+  /** The page this scene is laid out on when it has grown past the screen: its top-left is the screen's, its width the screen's, its height what the content needs. Absent: the screen is the page. */
   readonly page?: Box;
 }
 
@@ -52,6 +52,6 @@ export interface StagePlanView {
   readonly rooms: readonly { readonly key: string; readonly kind: StageBlockKind; readonly box: Box }[];
   readonly flow: Box;
   readonly foot: Box | null;
-  /** PLAN-canvas step 2: the page, host CSS pixels from the screen's top-left; absent while the screen is the page */
+  /** The page, host CSS pixels from the screen's top-left; absent while the screen is the page */
   readonly page?: Box;
 }

@@ -1,4 +1,4 @@
-// kinds/screen.ts: PLAN-v3-core 2.3, package PC1. The interface kit's mock-up (`painter/ui-stage.ts` `layoutUi`) wrapped: the same lines laid out
+// kinds/screen.ts: The interface kit's mock-up (`painter/ui-stage.ts` `layoutUi`) wrapped: the same lines laid out
 // on a board and drawn as finished frames, which the leaf hands on as `Drawn.frames`. It reads the look itself (`Env.legacy.look`) until
 // PC9 gives the kit its tokens by `Env`.
 //

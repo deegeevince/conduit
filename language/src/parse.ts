@@ -1700,7 +1700,7 @@ function parseDrop(head: Head, issues: Issues): Line | null {
   return withWhen(dropped, head.when);
 }
 
-/** `math <id> <method> [worked] [blank=answer|all] [carry=write|shown|none] [steps | step=<n|control>] | <sum>` (PLAN-maths M0). */
+/** `math <id> <method> [worked] [blank=answer|all] [carry=write|shown|none] [steps | step=<n|control>] | <sum>`. */
 function parseMath(head: Head, rawText: string | null, issues: Issues): MathLine | null {
   const id = readElementId(head.words[0], issues);
   if (id === null) return null;

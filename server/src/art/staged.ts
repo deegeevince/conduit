@@ -1,4 +1,4 @@
-// Arm D, the staged illustrator (PLAN-art.md, section 6): a loop of calls, each shown the picture the last one drew, rendered by the real painter
+// Arm D, the staged illustrator: a loop of calls, each shown the picture the last one drew, rendered by the real painter
 // in a headless page. At most `looks` rounds and `budgetMs` milliseconds. Each round that draws is offered to the studio as a stage, which the
 // conductor shows in place (parts keep their ids and change, new parts draw in); the best round is what is kept, not the last.
 //

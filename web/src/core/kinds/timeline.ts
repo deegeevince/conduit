@@ -1,4 +1,4 @@
-// kinds/timeline.ts: PLAN-v3-core 2.3, package PC1. The `timeline` engine (nodes on an axis, to scale) wrapped; its code stays in `painter/blocks/timeline.ts`.
+// kinds/timeline.ts: The `timeline` engine (nodes on an axis, to scale) wrapped; its code stays in `painter/blocks/timeline.ts`.
 
 import { layoutTimeline } from '../../painter/blocks/timeline';
 import { seal } from '../seal';

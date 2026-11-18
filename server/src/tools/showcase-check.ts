@@ -1,4 +1,4 @@
-// pnpm check's showcase group (PLAN-catalogue.md, S2): "What Conduit can do". No model, no account. The table (language/src/showcase.ts) says what each page claims; this plays the
+// pnpm check's showcase group: "What Conduit can do". No model, no account. The table (language/src/showcase.ts) says what each page claims; this plays the
 // pages the language holds (language/demos/showcase/<category>.series, the turns after a page's own scene from the table) on a replay server that has a recorded case, at 1280x720
 // and 390x844, and holds the table and the painter to each other.
 //

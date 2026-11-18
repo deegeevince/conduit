@@ -1,4 +1,4 @@
-// pnpm wall-bench: the wall of PLAN-wall, proved in a real browser (WL0). Two commands.
+// pnpm wall-bench: the wall, proved in a real browser (WL0). Two commands.
 //
 //   pnpm wall-bench serve [--port 4990] [--logs <dir of saved snapshots>] [--data <DATA_DIR>] [--web <built web dir>]
 //     Serves web/bench-wall.html (build it first: pnpm build) and a wall for it: `source=real` is the *.jpg snapshots of a log directory

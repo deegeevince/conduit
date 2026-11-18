@@ -1,4 +1,4 @@
-// The six widgets (PLAN-v3-core section 3): each is a picture she works by hand. Each declares its interactions, keeps its state in the
+// The six widgets: each is a picture she works by hand. Each declares its interactions, keeps its state in the
 // lesson's `held` (so a reload, going back and coming again all find it as she left it) and says every number it shows through `ctx.seal`,
 // so a readout can show partial work ("12 + 12 = 24") and never an open answer.
 

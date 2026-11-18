@@ -1,5 +1,5 @@
 // pnpm scenarios: the general scenarios gate. Four conversations that are NOT homework, driven in real headless Chrome with real input beside the worksheet case, so that anything
-// that only works for homework shows up red (PRINCIPLES pass 4: a toolkit, not an app; REVIEW-generality section 3).
+// that only works for homework shows up red.
 //
 //   pnpm scenarios [--url http://127.0.0.1:<port>] [--live | --record] [--only explainer,mockup,recipe,document,worksheet] [--screens 1280x720,390x844] [--out <dir>]
 //                  [--timeout <s>] [--quiet] [--port 4965] [--photo <worksheet photo>] [--private <dir>]

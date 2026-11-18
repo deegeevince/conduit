@@ -1,10 +1,10 @@
-// The digit algorithms of a written method (PLAN-maths M1): a sum and the options of a `math` line in, a grid of cells out. Pure: no clock, no DOM, no
+// The digit algorithms of a written method: a sum and the options of a `math` line in, a grid of cells out. Pure: no clock, no DOM, no
 // randomness. The painter lays the grid out (M2) and the page's cells are these cells; the brain writes none of it, so the working cannot be wrong.
 //
 // A cell is one stretch of paper: a digit (or, in an exchange, the new value of a digit, or in expanded form a place's whole value), a sign, or a rule.
 // `value` is always the true value of the cell; `blank` says the learner is the one to write it, so a painter must not draw or speak it (see `visibleText`).
 //
-// The algorithms are the school ones, fixed (PLAN-maths decision 3): carries above the column; subtraction by crossing out and exchanging, the new value
+// The algorithms are the school ones, fixed: carries above the column; subtraction by crossing out and exchanging, the new value
 // written above; short multiplication with its carries above; decimals aligned on the point.
 import type { MathBlank, MathCarry, MathMethod } from '../vocabulary';
 import { addDec, placeName, readDec, readSum, showDec } from './sum';

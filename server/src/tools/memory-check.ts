@@ -1,4 +1,4 @@
-// pnpm check's drawing-memory group (PLAN-toolkit.md, Design 2): the server's own path, with no model. Scripts are played as turns of a session
+// pnpm check's drawing-memory group (Design 2): the server's own path, with no model. Scripts are played as turns of a session
 // (the replay brain writes them, the conductor reads them), and the page's elements are read back:
 //
 //   undo      `restore undo` puts the drawing back one version, and the boxes digest of the page equals the earlier version's (twice, back to the first)

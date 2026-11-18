@@ -1,4 +1,4 @@
-// Routes (PLAN-visuals 2(a), 2(f)): `route <id> via=<part>,<part>…`. The kit draws the path: along an open part's own line, through a closed
+// Routes: `route <id> via=<part>,<part>…`. The kit draws the path: along an open part's own line, through a closed
 // part's centre; direction chevrons are always drawn (so a still shows the way too); dots ride it, placed from `Phase.ambient`, one crossing of
 // a stretch in about three seconds. Motion carries only direction, order, cause or change of state: a dot is an ordinary shape at a place a
 // function of the clock gives, so no renderer learns anything.

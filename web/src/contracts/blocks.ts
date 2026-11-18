@@ -135,7 +135,7 @@ export type BlockPart =
       /** true when the text sits on something drawn and needs the ground behind it to stay readable (a label on a link) */
       readonly plate: boolean;
       /**
-       * PLAN-maths M7. Set when the text is the source of a typeset formula (`text` is the TeX): KaTeX sets it in the page and the renderer draws what it set, in
+       * Set when the text is the source of a typeset formula (`text` is the TeX): KaTeX sets it in the page and the renderer draws what it set, in
        * `box` (its size from `formulaFacts`, in the room's own units). `em` is the font the formula is set at, stage units: its own sizes are ems of it. Anything that
        * does not know of formulas reads the part as the text it holds, the TeX as written.
        */

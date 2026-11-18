@@ -1266,14 +1266,14 @@ export const LIMITS = {
 } as const;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// v3: the document and the lesson (PLAN-v3-core 2.1, 2.6, 2.10, section 3). The words that make a tree of parts, and a part a lesson.
+// v3: the document and the lesson. The words that make a tree of parts, and a part a lesson.
 //
 // They are a table of their own and not rows of `VERB`: the brain's fixed prompt is built by walking `VERB`, it is at its budget, and a
 // lesson is taught by its own chapter on its own cues (package WS7), which builds its text from `LESSON_VERB`, `TECHNIQUE` and `VISUAL`.
 // ---------------------------------------------------------------------------------------------------------------------------------
 
 /**
- * v3 art (PLAN-art step 4). `draw`: a finished drawing of a named thing from the server's shelf. A table of its own, and not a row of `VERB`, for the
+ * v3 art. `draw`: a finished drawing of a named thing from the server's shelf. A table of its own, and not a row of `VERB`, for the
  * same reason as the lesson words: the fixed prompt is built by walking `VERB`, and `draw` is taught nowhere yet (step 7, behind `Services.art`).
  * The parser and the server accept it regardless.
  */
@@ -1387,7 +1387,7 @@ export const LESSON_LIMITS = {
 } as const;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// v3 maths (PLAN-maths M0). `math`: a written method laid out as on paper. A table of its own and not a row of `VERB`, for the same reason as
+// v3 maths. `math`: a written method laid out as on paper. A table of its own and not a row of `VERB`, for the same reason as
 // `draw`: the fixed prompt is built by walking `VERB` and is at its budget. It is taught nowhere yet (M5); the parser and the server accept it.
 // ---------------------------------------------------------------------------------------------------------------------------------
 

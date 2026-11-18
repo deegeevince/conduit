@@ -1,4 +1,4 @@
-// The text layer (PLAN-v2.1 A2): the stage's words as real text, laid over the picture where each drawn line is. The picture is WebGL and cannot be
+// The text layer: the stage's words as real text, laid over the picture where each drawn line is. The picture is WebGL and cannot be
 // selected; this can, so a drag selects, a right-click or a long-press offers Copy, and a screen reader reads the stage. The text is transparent: it
 // is the twin of what is drawn, and only its selection is seen. It is built from the painter's `text` event (which comes when the stage is at
 // rest) and kept out of the way while things move. It takes no tap away from anything: a choice, a control and a mock-up's live parts are not

@@ -1,4 +1,4 @@
-/* The kit a surface program wears (PLAN-v3-core 2.6: "tokens arrive as CSS variables with a small kit stylesheet, so it wears the look").
+/* The kit a surface program wears.
    Variables are written onto :root by the host from the shell's tokens; the defaults below are only for a page opened with none.
    Nothing here is the lesson's: a button, a field and the base type are what any surface of ours starts from. */
 

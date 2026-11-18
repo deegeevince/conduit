@@ -1,4 +1,4 @@
-// What a tap does (PLAN-v2.2 E13): "the controls the language already has are the kit's live parts, so a mock-up is a
+// What a tap does: "the controls the language already has are the kit's live parts, so a mock-up is a
 // prototype: its tabs switch and its fields take text". A control's value is a function of the taps it has had; the
 // screen is a function of the tree and that value. This is the one place a tap becomes a change of value. Pure.
 

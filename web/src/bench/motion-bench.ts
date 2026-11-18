@@ -1,4 +1,4 @@
-// The painter performing motion that keeps time (PLAN-motion step 2), with no browser and no model: the real timeline and the real film, read back as data.
+// The painter performing motion that keeps time, with no browser and no model: the real timeline and the real film, read back as data.
 // Prints JSON for `server/src/tools/motion-check.ts` to judge: for each case, where named things stood (centres, and the two ends of a line) at chosen clock readings T.
 //
 //   tsx --import ./src/bench/node-register.mjs src/bench/motion-bench.ts        (from language/, as `pnpm check --only motion` does)

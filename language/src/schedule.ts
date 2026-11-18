@@ -1352,7 +1352,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
     }
 
     if (line.verb === 'math') {
-      // A written method (PLAN-maths M2): a structure the painter lays out as on paper. Written again under its id with the same words it is nothing; with other words, it is that block, rewritten in place.
+      // A written method: a structure the painter lays out as on paper. Written again under its id with the same words it is nothing; with other words, it is that block, rewritten in place.
       const open = findLive(line.id, start);
       const openFigure = open?.span.figure;
       const wanted: MathFigure = { method: line.method, sum: line.sum, worked: line.worked === true, blank: line.blank ?? null, carry: line.carry ?? null, steps: line.steps === true, step: line.step ?? null, marks: [], fills: [] };
@@ -2270,7 +2270,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'set': {
         const start = startOf(entry, line.when);
         if (line.mathPart !== undefined) {
-          // a part of a written method is marked by the painter that lays it out (PLAN-maths M2); here it is a mark on the figure from this moment, no time and no place
+          // a part of a written method is marked by the painter that lays it out; here it is a mark on the figure from this moment, no time and no place
           const owner = line.target.kind === 'id' ? findLive(line.target.id, start) : null;
           const held = owner?.span.figure;
           if (owner === null || held?.kind !== 'structure' || held.math == null) report(seq, 'unknown-id', `no written method called "${line.target.kind === 'id' ? line.target.id : ''}" is on stage to mark a part of`);

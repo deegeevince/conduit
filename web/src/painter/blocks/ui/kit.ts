@@ -1,4 +1,4 @@
-// The kit (PLAN-v2.2 E13): each part of a screen as a small tree of boxes for the solver, and the shapes and words it is
+// The kit: each part of a screen as a small tree of boxes for the solver, and the shapes and words it is
 // drawn as. A part is one line of the brain's text; here it becomes a component that OWNS ITS WORDS: a button is a box
 // with its label set inside it by construction, so none of the rules for loose text (keep words apart, keep them readable
 // against what is behind them) apply to it, and a label can never leave its button.

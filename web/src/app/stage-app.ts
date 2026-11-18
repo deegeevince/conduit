@@ -105,7 +105,7 @@ export interface StageApp {
   readonly painter: Painter;
   readonly link: HttpLink;
   readonly hook: StageHook;
-  /** PLAN-canvas step 1, behind `?lens=1`: pinch and pan into the page. Null without the flag, and then nothing about the stage differs from before. */
+  /** Behind `?lens=1`: pinch and pan into the page. Null without the flag, and then nothing about the stage differs from before. */
   readonly lens: StageLens | null;
   /** whether a screen point is on a part of an open ask (its blank, Check, Hint, Show me, a choice), or on a cell of a written method */
   askAt(clientX: number, clientY: number): boolean;
@@ -582,7 +582,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     link.send(event);
   }
   let heldReport: BackEvent | null = null;
-  // v3. The document on the stage: when the session has one, the lesson view is laid over the stage (PLAN-v3-core WS6), the pen over its writing
+  // v3. The document on the stage: when the session has one, the lesson view is laid over the stage, the pen over its writing
   // slot (the ink module), her state goes up as `state` events, and a reload opens the last document again where she was (`resumeDocument`).
   const RESUME_KEY = 'conduit.document';
   const rememberDocument = (id: string | null, title?: string): void => {
@@ -1585,7 +1585,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         view.parts.some((part) => part.part !== 'whole' && at.x >= part.box.x && at.x <= part.box.x + part.box.width && at.y >= part.box.y && at.y <= part.box.y + part.box.height),
     );
   };
-  // Written methods (PLAN-maths M3): a tap on a cell puts the keyboard in it, inside the tap itself (a phone raises its number pad only for a focus made in the
+  // Written methods: a tap on a cell puts the keyboard in it, inside the tap itself (a phone raises its number pad only for a focus made in the
   // gesture); a tap on a cell's ✕ takes the pen's ink off it. A finger, a pen's short tap and a mouse all come here.
   let writer: { clear(key: string, part: string): void } | null = null;
   const clearMath = (key: string, part: string): void => {

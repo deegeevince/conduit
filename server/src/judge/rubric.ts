@@ -2,7 +2,7 @@
 // (`pnpm explore`), the live critic and look-and-fix's comparison, so a finding in real use and a score in a measured run mean the same.
 // None of it names a brain, a prompt, a draft, a fix or an experiment: a judge cannot be flattered by what it is not told.
 //
-// Revised with package H (PLAN-v2.1 H, "the rubric, with S3"): what a choice is, "wrong" and "boring" as the owner means them, a new hash.
+// Revised with package H: what a choice is, "wrong" and "boring" as the owner means them, a new hash.
 
 import { createHash } from 'node:crypto';
 

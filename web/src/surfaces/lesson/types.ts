@@ -1,5 +1,5 @@
 // The lesson view's types: what it draws (WS3's document and lesson types, from `@conduit/language`), what the widgets are given, and the
-// surface protocol (PLAN-v3-core 2.6) the page and the lesson speak. Nothing here imports the DOM.
+// surface protocol the page and the lesson speak. Nothing here imports the DOM.
 
 import { VISUAL_KINDS } from '@conduit/language';
 import type { DocState, Document, NodeId, NodeStatus, TechniqueId, VisualKind } from '@conduit/language';

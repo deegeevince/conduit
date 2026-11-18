@@ -1,4 +1,4 @@
-// kinds/choice.ts: PLAN-v3-core 2.3, package PC1. Words the user can tap (`say tap=yes`). Set by the old timeline until PC6.
+// kinds/choice.ts: Words the user can tap (`say tap=yes`). Set by the old timeline until PC6.
 
 import { notYet } from './not-yet';
 

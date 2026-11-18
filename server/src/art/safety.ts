@@ -1,4 +1,4 @@
-// One shelf, safe for a young child (PLAN-art.md, section 10). A small deny list refuses a subject at `draw` time, before the shelf is asked:
+// One shelf, safe for a young child. A small deny list refuses a subject at `draw` time, before the shelf is asked:
 // real people, brands, named characters, and anything not meant for a young child. It is a net and not a promise: the vetting of a sheet
 // ("suitable for a young child") is the other half, and a refused subject is only ever drawn as a soft placeholder with a note that says why.
 

@@ -1,4 +1,4 @@
-// `studio` (PLAN-v2.2 E13): a finished design. Surfaces on a quiet ground, soft shadows, rounded corners, one accent. The
+// `studio`: a finished design. Surfaces on a quiet ground, soft shadows, rounded corners, one accent. The
 // same lines as `wireframe`; this look is only what a designer would do next. See wireframe.ts for what is in these files.
 
 import type { UiTokens } from '../painter/blocks/ui/lang';

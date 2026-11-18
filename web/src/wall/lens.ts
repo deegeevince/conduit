@@ -2,7 +2,7 @@
 //   rest   the lens is constant (LAW still: nothing here moves it without input);
 //   hand   fingers, a wheel or a key are driving it: it is whatever they last set;
 //   coast  a pan was let go at a speed: a closed form of the time since (x = x0 + v/k (1 - e^-kt)), clamped, never past the wall's edge;
-//   glide  `lensState` of PLAN-wall: a function of the time since the move began (van Wijk and Nuij's curve, ease-out, no overshoot).
+//   glide  `lensState` of the wall: a function of the time since the move began (van Wijk and Nuij's curve, ease-out, no overshoot).
 // `tick(now)` is the only thing that changes with time, and it only ever drops a finished move into `rest`. Nothing here draws, plans or measures.
 
 import type { Tile, WallPlan } from './plan';
@@ -358,7 +358,7 @@ export class LensRig extends MotionRig {
 }
 
 /**
- * A page's camera (PLAN-canvas): the same motion as the wall's, over one page. The page is a box with its top-left at the screen's top-left; the
+ * A page's camera: the same motion as the wall's, over one page. The page is a box with its top-left at the screen's top-left; the
  * lens never leaves it. It is in one of two states: `following` (the lens is where Fit puts it, and moves when the page changes) and free (the person
  * has touched it, and it holds still until they press Fit). `reveal` takes a box into view by the least move.
  */
@@ -393,7 +393,7 @@ export class PageRig extends MotionRig {
   }
 
   /**
-   * A page that grows, and the newest line on it (PLAN-canvas step 2). A lens the person has not touched goes where Fit puts it, and when the page is taller than the window
+   * A page that grows, and the newest line on it. A lens the person has not touched goes where Fit puts it, and when the page is taller than the window
    * at that scale (the floor of legible type) it keeps the newest line in view; one they have touched holds still. `fresh`: another scene or turn has begun, so the lens
    * is the page's to place again.
    */

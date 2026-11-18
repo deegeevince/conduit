@@ -1,4 +1,4 @@
-// kinds/chart.ts: PLAN-v3-core 2.3, package PC1. A chart is not drawn from shapes: it is a surface the charting engine fills (`painter/charts.ts`
+// kinds/chart.ts: A chart is not drawn from shapes: it is a surface the charting engine fills (`painter/charts.ts`
 // builds its state from the schedule, `app/chart-host.ts` runs it). This adapter is the box and the surface's place in it, with no
 // placeholder drawn; PC12 gives it the rest. Ready where there is a charting host, as `Capabilities.structures` has it today.
 

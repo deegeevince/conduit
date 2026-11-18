@@ -1,4 +1,4 @@
-// The `figure` kind's input (PLAN-visuals 2(a), package FG2): the typed structure the language round will produce from
+// The `figure` kind's input: the typed structure the language round will produce from
 //
 //   figure heart cutaway | How the heart pumps blood
 //   poly ra smooth 24,30 38,26 42,40 30,46 in=body fill=blue label="right atrium"

@@ -12,11 +12,11 @@ export interface AppParams {
   readonly demo: string | null;
   /** ?motion=reduced|full overrides prefers-reduced-motion, so it can be tested without changing the OS */
   readonly motion: 'auto' | 'reduced' | 'full';
-  /** ?wall=1 turns the endless canvas on at `/`: every answer that draws is a frame on one wall, and the camera travels it (PLAN-wall WL3) */
+  /** ?wall=1 turns the endless canvas on at `/`: every answer that draws is a frame on one wall, and the camera travels it */
   readonly wall: boolean;
   /** ?journey=<name>: plays language/demos/journeys/<name>.journey on the real brain (see app/journey.ts); the language pane stays open and a label says what model ran */
   readonly journey: string | null;
-  /** ?lens=1 (PLAN-canvas step 1): pinch and pan into any answer, the Pencil draws on the stage without Draw, and a tap lands where it is made. Off, nothing changes. */
+  /** ?lens=1: pinch and pan into any answer, the Pencil draws on the stage without Draw, and a tap lands where it is made. Off, nothing changes. */
   readonly lens: boolean;
 }
 

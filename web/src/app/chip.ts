@@ -1,4 +1,4 @@
-// "Choices below" and "New below" (PLAN-canvas step 2): when a page has grown past the screen, the choices stand at its end, and a small chip at the foot of the screen says so
+// "Choices below" and "New below": when a page has grown past the screen, the choices stand at its end, and a small chip at the foot of the screen says so
 // until they are in view. A lens that the person has taken hold of and left says "New below" when the newest line is out of view. A tap goes there. The chip is the
 // screen's own (it does not move with the page), and the page never scrolls.
 

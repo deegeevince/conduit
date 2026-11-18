@@ -5,7 +5,7 @@
 //       <script.series|-> <outdir> [look=paper] [screens=1280x720,375x667] [room=1] [name=shot]
 //
 // `-` reads the script from standard input. `room` is the share of the safe frame's height given to the block (the plan gives a
-// block what the words and the choices leave). The Chrome that renders the SVGs is started by the caller (see PLAN-v2.1 section 5).
+// block what the words and the choices leave). The Chrome that renders the SVGs is started by the caller.
 
 import { EMPTY_STAGE, LineNormalizer, LineReader, TurnScore } from '@conduit/language';
 import type { ElementSpan, Polyline } from '@conduit/language';

@@ -335,7 +335,7 @@ async function generic(cx: Cx): Promise<Res[]> {
 }
 
 /**
- * PLAN-canvas step 2, with `?lens=1`: the four gates a page that grows must pass (a case that does not grow passes them trivially).
+ * With `?lens=1`: the four gates a page that grows must pass (a case that does not grow passes them trivially).
  *   never-squeezed  the scene gave up nothing to fit the screen, and no "earlier" is shown
  *   first-view      with the lens untouched, the first line and the picture are in view, and the body type is at or above the floor at that zoom
  *   steady          at rest nothing moves, and a lens the person has moved holds still
@@ -1798,7 +1798,7 @@ interface Cell {
   failed: string[];
   details: Res[];
   cost?: number;
-  /** PLAN-canvas step 0: what the scene squeezed where each turn that was checked came to rest (facts only, never a verdict) */
+  /** What the scene squeezed where each turn that was checked came to rest (facts only, never a verdict) */
   squeeze?: { turn: number; kinds: string[]; facts: string[] }[];
 }
 

@@ -1,4 +1,4 @@
-// The lesson: what a worksheet question is made of, as data (PLAN-v3-core 2.6, 2.10, section 3).
+// The lesson: what a worksheet question is made of, as data.
 //
 // A lesson is the `step`s and `ask`s of one `part`. This file is the words of it (`part`, `step`, `ask`, `hint`, `reply`, `end`), the
 // answer matcher, and the three layers of "an open ask seals its answer":

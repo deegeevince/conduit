@@ -1,4 +1,4 @@
-// pnpm check's art-maker group: a drawing the shelf lacks is made in the background and put in its placeholder's place (PLAN-art.md, steps 5 and 6).
+// pnpm check's art-maker group: a drawing the shelf lacks is made in the background and put in its placeholder's place.
 // It needs a server whose studio has a fake maker (`ART_MAKER=fake`, `ART_FAKE_MS` a few seconds), so no model is called. Three conversations, one tab each:
 //
 //   swap      `draw okapi1 okapi` shows a soft placeholder; a `move` and a label `near=okapi1-neck` are said meanwhile; then the parts of the drawing

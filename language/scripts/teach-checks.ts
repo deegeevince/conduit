@@ -1,4 +1,4 @@
-// Checks of what the brain is taught about documents (PLAN-v3-core WS7, split by GEN1a): the DOCUMENT chapter is neutral and short and names every
+// Checks of what the brain is taught about documents (split by GEN1a): the DOCUMENT chapter is neutral and short and names every
 // line; the technique cards that write documents (a young learner, a recipe, a review, a plan) fold with nothing refused or repaired; a card with
 // parts brings the chapter; and the DOCUMENT and HERE blocks at the start, mid-document and on a sheet of thirty questions. Run by `pnpm timeline`.
 import { readFileSync } from 'node:fs';

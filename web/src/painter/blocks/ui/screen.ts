@@ -1,4 +1,4 @@
-// One screen, laid out (PLAN-v2.2 E13): the tree the kit builds, the boxes the solver gives it, and the shapes and
+// One screen, laid out: the tree the kit builds, the boxes the solver gives it, and the shapes and
 // words each box is drawn as. Pure and deterministic: the same screen, look, measurer and state always give the same parts.
 
 import type { UiNode, UiScreen, UiTokens } from './lang';

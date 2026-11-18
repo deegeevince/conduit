@@ -1,4 +1,4 @@
-// A mock-up on the stage (PLAN-v2.2 E13, the first slice's painter hooks). The interface kit (`blocks/ui`) lays screens out and draws them as
+// A mock-up on the stage (the first slice's painter hooks). The interface kit (`blocks/ui`) lays screens out and draws them as
 // finished frames; this file is what the painter does with that: it registers the kit as the engine of the `screen` structure, so that the
 // stage plan rooms a mock-up like any block, and it draws what the kit made a row at a time as the rows land.
 //

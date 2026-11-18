@@ -1,4 +1,4 @@
-// Math: a written method laid out as on paper (PLAN-maths M2). The words of the line hold a sum and its options, never a digit: the grid of cells comes from
+// Math: a written method laid out as on paper. The words of the line hold a sum and its options, never a digit: the grid of cells comes from
 // `maths/written.ts` (language), the same cells the server seals the answer against, and this file only says where each stands.
 //
 //   digits         right-aligned in place-value columns, in a mono face at the look's headline size, every digit of one place on one x

@@ -1,4 +1,4 @@
-// kinds/slider.ts: PLAN-v3-core 2.3, package PC1. The `slider` control, the control engine of today (`painter/controls/engine.ts`) wrapped.
+// kinds/slider.ts: The `slider` control, the control engine of today (`painter/controls/engine.ts`) wrapped.
 
 import { seal } from '../seal';
 import { controlKind } from './adapt-control';

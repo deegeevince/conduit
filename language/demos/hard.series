@@ -320,7 +320,7 @@ say c7 callout at=3,50 in=p1 | left edge
 say c8 callout at=97,55 in=p1 | right edge
 wait 1
 
-# PLAN-maths M7: a typeset formula. TeX after the bar, set as a textbook sets it (a fraction bar, italic variables, a Delta, units upright): in a box with ink in it, a bar drawn,
+# A typeset formula. TeX after the bar, set as a textbook sets it (a fraction bar, italic variables, a Delta, units upright): in a box with ink in it, a bar drawn,
 # and its MathML in the text layer. The second has the numbers put in, as the owner's film shows c = d / dt worked out.
 scene formula layout=stack brisk
 say | The speed is the distance over the time.

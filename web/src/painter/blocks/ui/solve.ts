@@ -1,4 +1,4 @@
-// The auto-layout solver (PLAN-v2.2 E13): the useful subset of flexbox, solved as a pure function.
+// The auto-layout solver: the useful subset of flexbox, solved as a pure function.
 //
 // Row and column; gap; padding; align (start, centre, end, stretch); justify (start, centre, end, between); grow and
 // shrink; wrap on a row; hug, fill or a number for each side; least and most sizes. It follows CSS's own algorithm

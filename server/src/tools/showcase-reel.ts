@@ -1,4 +1,4 @@
-// The capability reel (PLAN-catalogue.md, S5): "What Conduit can do" as one film, built from the showcase table (language/src/showcase.ts) and the pages
+// The capability reel: "What Conduit can do" as one film, built from the showcase table (language/src/showcase.ts) and the pages
 // (language/demos/showcase/*.series). No model is ever called: the server's brain is the replay brain, and the only turns it answers (a typed question, a tap, a
 // slider that sends) are answered from a REPLAY_CASE this file writes out of the pages' own text.
 //

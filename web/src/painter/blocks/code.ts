@@ -1,4 +1,4 @@
-// Code: a listing taken exactly (PLAN-v3-core 2.3, PC10). Every row is one line of source as the brain wrote it, indentation and all; the panel is
+// Code: a listing taken exactly. Every row is one line of source as the brain wrote it, indentation and all; the panel is
 // a tinted ground in a frame, set in a monospaced face (the look's own when it is a fixed-pitch machine), a title and the file or language above a
 // hairline, and the rows below it, each word coloured by what the tokenizer takes it for (code-lex.ts: reserved words in the accent, strings and
 // numbers in the alt, comments dim).

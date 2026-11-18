@@ -1,4 +1,4 @@
-// Ahead and verify (PLAN-v3-core WS5): the parts of a document that are named and not yet written are written in the background, a few at a time,
+// Ahead and verify: the parts of a document that are named and not yet written are written in the background, a few at a time,
 // off the person's turn clock, and each one is checked before it is offered.
 //
 // This is general: a part is anything that is outlined (a worksheet's question, an explainer's chapter, a panel of a board), and what checks it

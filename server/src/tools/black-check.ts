@@ -1,4 +1,4 @@
-// pnpm check's fb-021 group: the screen must not go black on a phone, with Draw or without it (docs/feedback.md fb-021).
+// pnpm check's fb-021 group: the screen must not go black on a phone, with Draw or without it (fb-021).
 //
 // The owner's phone (Android 10, Chrome 157, 718x626 at three pixels to the point) showed the stage black, and an iPhone had before, "on opening Draw". Neither could be seen in a desktop
 // browser, so this plays the owner's own first minute at the owner's own size, in headless Chrome (an Android user agent, touch) and in Playwright's WebKit, and looks at the pixels:

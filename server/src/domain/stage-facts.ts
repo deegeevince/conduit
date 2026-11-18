@@ -35,7 +35,7 @@ export function engineMismatch(capabilities: Capabilities): string | null {
  * its content asks of its frame is the browser's). A turn whose stage holds either is the page's to measure, here and in every later turn that
  * still has it on the stage. Words in a script no shipped face has (Greek, Cyrillic, Arabic, Hebrew, Indic, Thai, Latin Extended...) are the same: the page sets a
  * run in the device's own font and measures it there, the server only estimates it, so such a turn is the page's to measure and costs the conversation nothing.
- * A typeset formula (`math f1 formula | …`, PLAN-maths M7) is the same: KaTeX sets it in the browser's own layout and the page says how big it came out; the server holds only
+ * A typeset formula (`math f1 formula | …`) is the same: KaTeX sets it in the browser's own layout and the page says how big it came out; the server holds only
  * an estimate from the characters.
  */
 export function measurable(schedule: Schedule): boolean {

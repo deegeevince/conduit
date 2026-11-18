@@ -1,6 +1,6 @@
 // Entry for bench-chart.html: the chart engine with no painter. Every kind in every look, the cases that are
 // hard (several series, a volume pane, names and numbers along the bottom, marks, spark, live, the waiting and
-// failed states), and the two measures of PLAN-v2 rows 8 and 9: the axes as written, and ten thousand points
+// failed states), and the two measures: the axes as written, and ten thousand points
 // panned and zoomed. `window.__chartBench` is what a driver (and the battery) reads.
 
 import { LOOK_IDS, chartModelOf, readNumber } from '@conduit/language';
@@ -179,7 +179,7 @@ async function perf(look: LookId = 'night'): Promise<{ points: number; medianMs:
   return result;
 }
 
-/** PLAN-v2.1 row 9, counted on every mounted chart that has data: label text at least 11 CSS px and the stage's `xs`; every tick label equals its tick; the plot at least 60% of the chart's room. */
+/** Counted on every mounted chart that has data: label text at least 11 CSS px and the stage's `xs`; every tick label equals its tick; the plot at least 60% of the chart's room. */
 function row9(): { checked: number; failures: string[] } {
   const failures: string[] = [];
   let checked = 0;

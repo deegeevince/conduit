@@ -1,4 +1,4 @@
-// The second check of what was written ahead (PLAN-v3-core WS5): a cheap model, asked cold, whether a part's answers are right and its words
+// The second check of what was written ahead: a cheap model, asked cold, whether a part's answers are right and its words
 // are right for a young learner. It is the judge's own ask (`ask.ts`): a separate process, no tools, no settings, a pinned model and effort,
 // and it is shown only the part (its words, its choices, its accepted answers), never how it was written. It is the net under the exact
 // checks of `domain/verify.ts`, not instead of them: where the solver recomputed a sum, the solver has the last word.

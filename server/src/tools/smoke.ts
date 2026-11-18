@@ -8,7 +8,7 @@
 // send a prompt; the reply arrives; the trace under it opens; the canvas opens and the answer is ON IT (the same on-stage, no-overlap and nothing-cut-off checks, scoped to the
 // canvas's stage); and the composer is reachable with the canvas open (the pill is on screen, nothing covers it, a real tap and real keys put words in it).
 //
-// The conversation (PLAN: the deploy gate): 1 a lighthouse at dusk; 2 a flowchart; 3 a stock chart; 4 a sign-in mock-up (the kit's screens, not a live app); 5 type into its
+// The conversation (the deploy gate): 1 a lighthouse at dusk; 2 a flowchart; 3 a stock chart; 4 a sign-in mock-up (the kit's screens, not a live app); 5 type into its
 // fields, flip its toggle and press its button with real events; 6 an insurance home page; 7 /new.
 // After each turn it waits for the page's own rest (the status line says `ready`, no turn open, nothing entering or leaving, no request in
 // flight, the stage unchanged for a moment) and then checks:
@@ -840,10 +840,10 @@ export interface Answer {
   readonly controls: readonly { readonly id: string; readonly control: string; readonly label: string; readonly enabled: boolean; readonly box: Box }[];
   readonly script: string;
   readonly viewport: { readonly width: number; readonly height: number };
-  /** PLAN-canvas step 2: the page the scene is laid out on when it has grown past the screen (host CSS pixels); null otherwise */
+  /** The page the scene is laid out on when it has grown past the screen (host CSS pixels); null otherwise */
   readonly page: { readonly width: number; readonly height: number } | null;
   readonly hasHook: boolean;
-  /** what the scene on stage gave up to fit the screen (PLAN-canvas step 0); null on a build that does not say */
+  /** what the scene on stage gave up to fit the screen; null on a build that does not say */
   readonly squeeze: { readonly squeezed: boolean; readonly kinds: readonly string[]; readonly facts: readonly { readonly kind: string; readonly key: string | null; readonly why: string }[] } | null;
   readonly mockups: readonly MockupView[];
   /** the leader lines of the callouts (null on a build whose hook does not say) */
@@ -1055,7 +1055,7 @@ export class Conversation {
     this.checkOverlap(step, answer, results);
     this.at('checking nothing is cut off');
     await this.checkCutOff(answer, results);
-    // Information, never a verdict: what the layout gave up to fit this screen (PLAN-canvas step 0)
+    // Information, never a verdict: what the layout gave up to fit this screen
     this.add(results, 'squeeze', 'PASS', squeezeText(answer.squeeze));
     if (answer.squeeze?.squeezed === true) this.note(`  squeezed (information only): ${squeezeText(answer.squeeze)}`);
     if (step.n === 1) {

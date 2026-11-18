@@ -1,4 +1,4 @@
-// `pnpm art fill`: the shelf, filled ahead of time (PLAN-art.md, section 6; step 8). A subject the shelf lacks costs a child a minute or two of
+// `pnpm art fill`: the shelf, filled ahead of time (step 8). A subject the shelf lacks costs a child a minute or two of
 // waiting the first time the brain draws it; this commissions the commonest ones in advance, through the studio's own code path (the same prompt,
 // maker, converter, validation and sheet as a live miss), one at a time, and stops when the usage throttle says so or on Ctrl-C.
 //

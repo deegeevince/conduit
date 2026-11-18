@@ -1,4 +1,4 @@
-// The figure as finished frames (PLAN-visuals 2(a), (d), (f)): shapes and words the painter already draws, in the leaf's own pixels (origin at its
+// The figure as finished frames: shapes and words the painter already draws, in the leaf's own pixels (origin at its
 // corner). No renderer learns anything: a gradient fill, an outline, a `soft=` shadow, an open line, a line of type. Dots are ordinary shapes at a
 // place that is a function of the ambient clock.
 //

@@ -1,4 +1,4 @@
-// Text out (PLAN-v2.1 A2/T2): the words on the stage, as the chrome's text layer needs them. The renderer draws them in WebGL, where they cannot be
+// Text out: the words on the stage, as the chrome's text layer needs them. The renderer draws them in WebGL, where they cannot be
 // selected, copied or read; this says where each wrapped line is on the screen, what it says and what it is, so that a layer of real text can
 // lie over the picture. Pure: a frame and its schedule in, spans out. It reads the same `ElementFrame`s the renderer draws (structure parts and
 // mock-up text included, they are frames too) and projects them through the frame's own camera, as the vector exporter does.

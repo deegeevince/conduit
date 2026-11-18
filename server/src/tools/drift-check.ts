@@ -15,7 +15,7 @@
 //   free-title a title the stage places on a free layout, over the worked answer (fb-062; and its asks that wait, fb-059, fb-060): the page and the server place it alike, and say alike which things do not land
 //   cjk, flow, carry, words   the plain cases, so that the check has something that must never drift
 //   scripts    Greek, Cyrillic, Arabic: the page measures them in the device's own font, so the server leaves the turn to the page
-//   formula    a typeset formula is set by KaTeX in the browser's layout (PLAN-maths M7): the server holds only an estimate, so it leaves the turn to the page, as with scripts
+//   formula    a typeset formula is set by KaTeX in the browser's layout: the server holds only an estimate, so it leaves the turn to the page, as with scripts
 //   app        a live app is sized by the browser: the server says so and leaves the turn to the page
 //
 // And the check must be able to see: without the page's facts, the same measure is held against the same digest, and at least one case of each
@@ -152,12 +152,12 @@ function canon(value: unknown): string {
 export function wireProblems(): string[] {
   const problems: string[] = [];
   const written = ['node conf from=floor2:"different text" in=x5 | Both agree', 'node over end from=veto:"2/3 of both" in=x5 | Law anyway', 'node a from=b:"it\'s a long one" in=x5 | Words',
-    // PLAN-maths M0: a written method, its options, and the parts of it that other lines name
+    // A written method, its options, and the parts of it that other lines name
     'math m1 column | 12+12+12+12+12+12',
     'math m2 column worked blank=all carry=shown steps | 503 - 278',
     'math m3 times step=s1 | 47 x 6',
     'math m4 bond | 10 = 4 + ?',
-    // PLAN-maths M7: a formula is TeX as written, backslashes, braces and all, and must read back as itself
+    // A formula is TeX as written, backslashes, braces and all, and must read back as itself
     'math f1 formula | c = \\frac{d}{\\Delta t}',
     'math f2 formula | c = \\frac{3.0\\times10^{8}\\,\\text{km}}{1320\\,\\text{s}} \\approx 2.3\\times10^{5}\\,\\text{km/s}',
     'say near=m1.r3:below | Look at this row',

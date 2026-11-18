@@ -1,4 +1,4 @@
-// What a scene squeezed to fit the screen, and why (PLAN-canvas step 0). Facts only: nothing here changes what is drawn. It is published as
+// What a scene squeezed to fit the screen, and why. Facts only: nothing here changes what is drawn. It is published as
 // `PainterSnapshot.squeeze`, so a test can say which answers are cramped today, and the planned grow mode can later use the same facts to decide that a
 // scene needs a page taller than the screen.
 

@@ -6,7 +6,7 @@
 //              before restSettled, the page's own judgement), the drag as long as asked and the
 //              slider where it was sent, the undo's own turn; the language pane is open and cannot be closed; no label (the replay brain reports no model)
 //   missing    a tap target that never appears stops the journey with a message on `window.__journey`, not an alert
-//   mover      a stage with something that goes round for ever (3b of PLAN-romer): `rest` comes and its last visible change is the turn's own, well before the page judged the stage settled
+//   mover      a stage with something that goes round for ever: `rest` comes and its last visible change is the turn's own, well before the page judged the stage settled
 //              (not the mover's, which never stops); a label that goes round, the text layer made again at each frame as a clock that moves words will, is tapped where it is: one act
 //              that names it
 //   words      a tap asks for whole words: "Io" is not found in "motion" or in "position", and the choice or the label that only has the letters is not tapped for it
@@ -45,7 +45,7 @@ const MOVER = [
 const WORDS = ['scene layout=caption canvas=wide lines=3', 'circle jup 80,45 12 fill=accent', 'say x1 callout near=jup | position', 'say x2 choice | Show me the motion'].join('\n');
 
 /**
- * What a clock that moves words will do to the text layer (PLAN-motion step 4, not built yet): the label "Io" goes round in a circle of 60 px, a lap in 6 s, and the layer's
+ * What a clock that moves words will do to the text layer (not built yet): the label "Io" goes round in a circle of 60 px, a lap in 6 s, and the layer's
  * block for it is made again at every frame (a copy put in the old one's place), so a node a press found is gone by the time it is let go.
  */
 const GO_ROUND = `(() => {
@@ -131,7 +131,7 @@ export function scriptResults(): CheckResult[] {
   const words = ['correct st | 2. Compression: it rises', 'say x1 | At {rpm}', 'set sun fill=#ff8a4c', 'set shade opacity=0', 'set engine fill=accent'];
   add('journey-bind-moves', [...moves.filter((body) => !bindMovesShape(body)).map((body) => `"${body}" should move a shape`), ...words.filter((body) => bindMovesShape(body)).map((body) => `"${body}" should not`)], 'a bound move, turn or redrawn shape moves a shape; a bound sentence or colour does not');
 
-  // a tap's words are found as whole words (3b of PLAN-romer): "Io" is not in "motion" or "position"; the same words, or the words a label begins with, or has inside it, are
+  // a tap's words are found as whole words: "Io" is not in "motion" or "position"; the same words, or the words a label begins with, or has inside it, are
   const ranks: [string, string, number][] = [
     ['Show me the motion', 'Io', -1],
     ['position', 'Io', -1],

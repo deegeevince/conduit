@@ -1,4 +1,4 @@
-// pnpm check's motion group (PLAN-motion step 2, the bench half): the painter performing motion that keeps time, read from the frames' own transforms. No browser, no model.
+// pnpm check's motion group (the bench half): the painter performing motion that keeps time, read from the frames' own transforms. No browser, no model.
 //
 //   drawing      a frame with no clock is the drawing, and so is one at the clock's zero
 //   spin         a spin about a point lands on the exact points at every quarter of its period, and on 360 x frac(T / period) at T of a hundred thousand

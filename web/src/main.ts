@@ -175,7 +175,7 @@ async function start(): Promise<void> {
   }
   const mounted = app;
   window.__stage = mounted.hook;
-  // ?wall=1 (PLAN-wall WL3): a tap on a turn in the transcript flies the camera to its frame
+  // ?wall=1: a tap on a turn in the transcript flies the camera to its frame
   let wall: WallRoom | null = null;
   const transcript = mountTranscript(promptBar.extra, mounted.painter, {
     menu: promptBar.menu,

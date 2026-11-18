@@ -21,7 +21,7 @@ interface Node {
   readonly runs: HTMLSpanElement[];
   readonly marks: HTMLDivElement[];
   readonly plates: HTMLDivElement[];
-  /** a typeset formula: KaTeX's own markup, put in the page where the formula's box is (PLAN-maths M7) */
+  /** a typeset formula: KaTeX's own markup, put in the page where the formula's box is */
   formula: HTMLDivElement | null;
   formulaKey: string;
 }

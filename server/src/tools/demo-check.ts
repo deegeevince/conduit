@@ -1,4 +1,4 @@
-// What `pnpm check` asks of every scene of a demo beyond the painter's own account of it, named by the backlog row it guards (docs/feedback.md). In the page, at a scene's
+// What `pnpm check` asks of every scene of a demo beyond the painter's own account of it, named by the backlog row it guards. In the page, at a scene's
 // rest frame; the schedule-only checks of the same rows are `pnpm timeline` (language/scripts/reading-checks.ts) and `pnpm demo-checks` (web/src/painter/demo-checks.ts).
 //
 //   fb-004, 006, 031  chrome over the stage: in a tour demo the tour's bar is up (from the start of the demo, not only at its end) and no word, control, drawing or block of the stage,

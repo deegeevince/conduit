@@ -159,7 +159,7 @@ export type UiNoteKind =
   | 'two-primary'
   | 'unknown-part';
 
-/** A lint note (PLAN-v2.2 E13, "judged by code"): what is wrong, where, and by how much. */
+/** A lint note: what is wrong, where, and by how much. */
 export interface UiLintNote {
   readonly kind: UiNoteKind;
   readonly screen: string;

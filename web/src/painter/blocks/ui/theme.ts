@@ -1,4 +1,4 @@
-// A mock-up's theme (PLAN-v2.2 F1, "mock-up fidelity"): what the brain says on a `screen` line (`theme=dark accent=green radius=round type=serif
+// A mock-up's theme: what the brain says on a `screen` line (`theme=dark accent=green radius=round type=serif
 // density=compact`) becomes the whole token set the kit reads. The brain names a feeling; the kit does the arithmetic: the grounds and the lines are
 // tinted from the accent's hue, the inks are moved until they read (contrast of at least 4.5 on every ground they are set on, WCAG's own formula), and what
 // is written on an accent is whichever of white or near-black reads better on it. A brain cannot ship unreadable words by choosing a colour.

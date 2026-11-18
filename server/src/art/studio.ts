@@ -1,4 +1,4 @@
-// The studio (PLAN-art.md, sections 6 and 7): when a `draw` line misses the shelf, a drawing is commissioned here, made off the answer's clock, kept
+// The studio: when a `draw` line misses the shelf, a drawing is commissioned here, made off the answer's clock, kept
 // in the shelf's cache, and handed back to whoever is waiting for it. Nothing here touches the stage: the conductor listens, and swaps the sheet
 // in for the placeholder when it is safe to (`Conductor.showArt`).
 //

@@ -1,4 +1,4 @@
-// Checks of the document's words and types (PLAN-v3-core WS3): the lesson lines read and read back as themselves, the answer matcher's table,
+// Checks of the document's words and types: the lesson lines read and read back as themselves, the answer matcher's table,
 // the spoiler lint, the fold of a log into a document, and `advance`. Run by `pnpm timeline`.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

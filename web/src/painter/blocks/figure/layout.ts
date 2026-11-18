@@ -1,4 +1,4 @@
-// The figure's layout (PLAN-visuals 2(a), FG2): everything the kit decides, in the pixels of the box it is given, from the typed input.
+// The figure's layout: everything the kit decides, in the pixels of the box it is given, from the typed input.
 //
 //   fit        the subject (its parts' union) is fitted to 55-75% of the stage, the largest share at which every label has room for its gutter
 //   labels     boundary labels (`boundary.ts`): outside the subject, on the side nearest the part, no two leaders crossing; at most seven a

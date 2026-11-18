@@ -286,7 +286,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
 // ---------------------------------------------------------------- v2.1: true revision
 //
 // In v2 a fix was a second performance: in most fixes the brain opened a new scene and wrote the whole answer again, the viewer
-// watched the same diagram drawn twice, and nothing checked that the second was better (PLAN-v2.1.md, "True revision"). From v2.1:
+// watched the same diagram drawn twice, and nothing checked that the second was better. From v2.1:
 //
 //   1. A fix is a diff. It changes what is there (`set`, `move`, `cancel`, `drop`, a thing declared again under its id with
 //      something different) and may add to it. It never opens a scene and never says again what has not changed (`fixLineAllowed`,

@@ -4,7 +4,7 @@ This document is the specification. The code in `language/` implements it, and w
 
 Series is version 4. Version 2 could only set type; version 3 can draw; version 4 can name a structure and have the painter lay it out, chart data on an instrument, put controls on stage that drive the drawing with no round trip, and be shown its own draft and fix it. Everything version 3 said still means what it meant, with the exceptions listed in section 12.
 
-> **State of the build.** Version 4 is specified here, parsed, scheduled and carried by `language/`, and performed: the painter lays out every structure, draws charts through its charting engine, works every control and renders its own paint, and advertises exactly that, so a brain is taught all of it (`web/src/painter/blocks/index.ts`, `controls/index.ts`, `web/src/render/chart/index.ts`). What v2.1 adds to the language (`standing`, `code`, `deck`, `pic … from=`, `refine`, `href=`, and composition by relation, repetition and dive) is not here yet: each is written into this document by the package that builds it, before it is parsed (`PLAN-v2.1.md`).
+> **State of the build.** Version 4 is specified here, parsed, scheduled and carried by `language/`, and performed: the painter lays out every structure, draws charts through its charting engine, works every control and renders its own paint, and advertises exactly that, so a brain is taught all of it (`web/src/painter/blocks/index.ts`, `controls/index.ts`, `web/src/render/chart/index.ts`). What v2.1 adds to the language (`standing`, `code`, `deck`, `pic … from=`, `refine`, `href=`, and composition by relation, repetition and dive) is not here yet: each is written into this document by the package that builds it, before it is parsed.
 
 ## 1. What Series is for
 
@@ -218,7 +218,7 @@ paint [id] [x,y WxH] [over=<group>] [as=<medium>] [sketch=fade|keep] [mask=…] 
 
 **A painting is the painter's own rendering of the brain's sketch.** No image model is used: none is configured, and the owner has ruled out paid services. The brain draws the picture with ordinary shapes; `paint` puts a picture element over them (the given box, or the box of the group named by `over=`, or the whole canvas) and the renderer re-renders those shapes in a medium, as shader passes: washes that pool and granulate, edges that bleed, brush ridges, hatching, a posterised cut. It is revealed over the sketch like a wash; with `sketch=fade` (the default) the sketch's lines fade as it grows, with `sketch=keep` they stay on top. The text after the bar is optional: it is what the transcript calls the painting.
 
-It paints what was drawn and invents nothing. A horse drawn badly is a badly drawn horse in watercolour. That is the limit of this round and it is stated in product.md.
+It paints what was drawn and invents nothing. A horse drawn badly is a badly drawn horse in watercolour. That is the limit of this round.
 
 Three properties make a drawing less flat without any painting: `tex=` gives a fill a texture (the reference lists them), `soft=N` fades a shape's edge over N canvas units (light, cloud, shadow), and `brush=` gives one line a stroke character of its own, whatever the look's is (`ink` swells and tapers, `dry` breaks up).
 
@@ -448,7 +448,7 @@ reply | <words>
 end
 ```
 
-These words build a **document**: a tree of parts, a mind and a person's shared place to come back to (PLAN-v3-core 2.1). They are a table of their own, `LESSON_VERB`, and not rows of `VERB`: the fixed prompt is built from `VERB`, and a lesson is taught by its own chapter on its own cues. They put nothing on a painted stage and take no time (`QUIET_VERBS`); `L/document.ts` keeps them.
+These words build a **document**: a tree of parts, a mind and a person's shared place to come back to. They are a table of their own, `LESSON_VERB`, and not rows of `VERB`: the fixed prompt is built from `VERB`, and a lesson is taught by its own chapter on its own cues. They put nothing on a painted stage and take no time (`QUIET_VERBS`); `L/document.ts` keeps them.
 
 - **`part`** is a place in the document: a sheet, a section, a question, a way of doing it. Its title is its words. **Written with only a title it is an outline**: named now, written later. `in=` says what it sits in; the first part written is the document's root, and one with no `in=` sits in the part last opened (an open `part … end` block) or, with none open, in the root. `tag=` is the technique a way uses, one of the table below; the catalogue lists by it, and a word that is not in it is dropped with a warning. `crop=` is where a question sits on the photo it was read from, in whole percents of the photo's width and height from its top left (`crop=6,31,88,7`), so that the lesson page can show the worksheet's own words; `from=` names the photo when a conversation has several (absent, the first). A `crop` that is not four numbers inside the photo is dropped with a warning. It is written again by writing the part again.
 - **`step`** is one reveal of a lesson: its words and the picture shown with them. Steps stack into a worked page, and nothing shown is taken away. It sits in the part it names, else the part last written. The normaliser gives an unnamed step an id; **writing the same id again replaces the step**, which is how a step that gave an answer away is mended.
@@ -696,7 +696,7 @@ The report also says whether the viewer skipped to the end, and where.
 
 **Controls.** The brief says what the user set since the last turn (`THE USER SET: angle to 45deg`), and each control in ON STAGE NOW is described with what it holds.
 
-**Techniques.** The brief may carry `TECHNIQUES THAT FIT`: at most three recipes chosen for this message from the technique library (product.md), each a sentence on when to use it and a short worked example in Series. They are chosen per turn and are never part of the system prompt, which is fixed for a conversation.
+**Techniques.** The brief may carry `TECHNIQUES THAT FIT`: at most three recipes chosen for this message from the technique library, each a sentence on when to use it and a short worked example in Series. They are chosen per turn and are never part of the system prompt, which is fixed for a conversation.
 
 **Data.** `DATA d1: <where it came from>. N rows; columns …` names a table the server holds (pasted by the user, or read from a CSV at a link), with its first and last rows and the range of each column. A chart draws it by reference (`data=d1`).
 

@@ -1,4 +1,4 @@
-// Fixture documents for the bench: the lesson with no model. Each is written in the lesson lines of PLAN-v3-core 2.10 and read by WS3's
+// Fixture documents for the bench: the lesson with no model. Each is written in the lesson lines and read by WS3's
 // `foldSource`, so the bench plays what the brain will write and the reader checks it first (a spoiler is refused here as it will be
 // on the wire). Case zero is the owner's own typed problem (`c3`, t13 to t16: the florist and her vases); the three sheets are made-up
 // worksheets in the manner of a year-two maths book, and say nothing the owner's photos said. The question with a crop shows a drawn

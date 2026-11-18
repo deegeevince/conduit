@@ -1,4 +1,4 @@
-// The stage's lens (PLAN-canvas step 1, behind `?lens=1`): pinch and pan into any answer, with the Pencil still inking and a tap landing where it is made.
+// The stage's lens (behind `?lens=1`): pinch and pan into any answer, with the Pencil still inking and a tap landing where it is made.
 //
 // What this file is: the DOM glue. The motion is `PageRig` (wall/lens.ts), the hands are `attachGestures` (wall/gestures.ts), the numbers are
 // painter/view.ts and contracts/space.ts. Nothing here lays anything out: the painter still draws the page as it always has, and the lens only
@@ -123,7 +123,7 @@ export interface StageLens {
   /** the screen or the page changed size */
   resize(): void;
   /**
-   * A page that grows (PLAN-canvas step 2): the page, the newest line on it and the body size. A lens the person has not touched goes where Fit puts it and keeps the
+   * A page that grows: the page, the newest line on it and the body size. A lens the person has not touched goes where Fit puts it and keeps the
    * newest line in view; one they have touched holds still. `fresh`: another scene or turn has begun.
    */
   follow(info: { readonly page: Box; readonly newest: Box | null; readonly fresh: boolean; readonly body: number; /** long prose (`layout=page`): it arrives at one to one, from the top, and follows the newest line */ readonly reading?: boolean }): void;

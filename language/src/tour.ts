@@ -156,7 +156,7 @@ export function heldTourCards(): readonly TourDemoCard[] {
 /**
  * The earlier drawings the memory card plays: five real turns, one after another, so the server remembers them as it remembers an answer (`{1}` is the turn of the first). Both drawings are on
  * the square canvas, so nothing rescales; the colours are written as hex, so the moon is a moon in every look; one line of words under one id (`note`) is said again each turn. The last turn
- * puts the first drawing's moon over the house that is on stage (docs/demo-audit.md 1B).
+ * puts the first drawing's moon over the house that is on stage.
  */
 export const MEMORY_STEPS: readonly string[] = [
   'look paper\nscene night figure canvas=square lines=1\nline ground1 6,80 94,80 thick=1\ncircle moon1 28,24 9 fill=#f2c94c stroke=none\nrect trunk1 64,56 4x24 fill=#6b4a2b\ncircle crown1 66,46 14 fill=#3d7a4f stroke=none\nsay note | A first drawing: a moon over a tree.\nwait 1s',

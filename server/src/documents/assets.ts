@@ -1,4 +1,4 @@
-// What a document keeps beside its words (PLAN-v3-core WS4, kept): the cut of the photo each question sits on, and the strokes of her hand.
+// What a document keeps beside its words (kept): the cut of the photo each question sits on, and the strokes of her hand.
 // They live with the DOCUMENT, in `<DATA_DIR>/documents/<document id>/`, and not with the session that made them: a photo is its session's and a
 // session ends, but a document is opened again from another browser or another device, and her working is hers.
 //

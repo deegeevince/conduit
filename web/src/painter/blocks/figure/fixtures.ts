@@ -1,5 +1,5 @@
 // The figure kind's fixtures, written as the typed structure (`FigureInput`) the language round will produce. The first is the plan's heart
-// (PLAN-visuals 2(a), turn t6 of the owner's heart prompt): the same parts, the same words, no coordinate for a label, a route or a step.
+// (turn t6 of the owner's heart prompt): the same parts, the same words, no coordinate for a label, a route or a step.
 
 import type { FigureInput, FigurePart, Pt } from './types';
 

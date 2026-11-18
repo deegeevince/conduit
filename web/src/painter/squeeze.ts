@@ -1,4 +1,4 @@
-// The squeeze list (PLAN-canvas step 0): one pure function that names what a scene gave up to fit one screen, and why. It only reads facts that the
+// The squeeze list: one pure function that names what a scene gave up to fit one screen, and why. It only reads facts that the
 // layout already decided; it changes nothing on stage.
 
 import type { Squeeze, SqueezeFact, SqueezeInput, SqueezeKind } from '../contracts/squeeze';

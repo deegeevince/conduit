@@ -1,4 +1,4 @@
-// pnpm check's maths group (PLAN-maths M2): written methods laid out on the page's own painter, and the painted boxes read back. No model, no browser.
+// pnpm check's maths group: written methods laid out on the page's own painter, and the painted boxes read back. No model, no browser.
 //
 //   place      the digits of one place share one x (within a pixel), across every row and the answer row
 //   blanks     every blank is a box of at least 44 on each side, with nothing written in it
@@ -10,7 +10,7 @@
 //
 // The page's half is `web/src/bench/math-bench.ts` (the real painter, a renderer that keeps the last frame). Run by `pnpm check` and standalone (`tsx math-check.ts`).
 //
-// The input half (PLAN-maths M3, M4) is worked in a real headless Chrome with a real finger, a real pen and real keys, at 820x971 (dpr 2) and 390x844 (dpr 3), on a server
+// The input half is worked in a real headless Chrome with a real finger, a real pen and real keys, at 820x971 (dpr 2) and 390x844 (dpr 3), on a server
 // this group starts itself (BRAIN=replay: no model):
 //
 //   keys    a finger tap focuses a cell inside the gesture; `2` moves to the carry then the tens; Backspace, Tab and the arrows walk the sum; Enter puts the keyboard away and

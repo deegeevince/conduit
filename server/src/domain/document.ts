@@ -1,4 +1,4 @@
-// The document on the server (PLAN-v3-core 2.1, 2.11, WS4).
+// The document on the server.
 //
 // A conversation's document is a FOLD over its session log, and nothing else: `DocumentFolder` (L/document.ts, WS3) takes one record at a
 // time, in order, and is the only thing that ever builds a document. The conductor feeds it the very record it has just written to the log;

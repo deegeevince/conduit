@@ -1,4 +1,4 @@
-// The owner's skill library, read only (PLAN-skills section 1). A skill is a folder holding a `SKILL.md`. This file finds them and keeps a small
+// The owner's skill library, read only. A skill is a folder holding a `SKILL.md`. This file finds them and keeps a small
 // list in memory: nothing is written, nothing is run, and the text of a skill is never kept here (`text.ts` reads it fresh when it is used).
 //
 // Sources, in order; the first holder of a name wins and a later one is listed once, as "shadowed":

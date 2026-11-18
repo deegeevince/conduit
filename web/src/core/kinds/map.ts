@@ -1,4 +1,4 @@
-// kinds/map.ts: PLAN-v3-core 2.3, package PC1. The `map` engine (pins where the brain put them) wrapped; its code stays in `painter/blocks/map.ts`.
+// kinds/map.ts: The `map` engine (pins where the brain put them) wrapped; its code stays in `painter/blocks/map.ts`.
 
 import { layoutMap } from '../../painter/blocks/map';
 import { seal } from '../seal';

@@ -1,4 +1,4 @@
-// Depth as pure geometry (PLAN-depth.md, D1): a point in space, a turn of the camera, an orthographic projection, and the cutting a sphere's
+// Depth as pure geometry: a point in space, a turn of the camera, an orthographic projection, and the cutting a sphere's
 // limb needs. Nothing here knows a painter, a clock or a drawing; the server's measure and the page get the same answer from the same numbers.
 //
 // The conventions, once:

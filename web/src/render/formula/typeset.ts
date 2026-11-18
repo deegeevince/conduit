@@ -1,4 +1,4 @@
-// The lazy chunk: KaTeX, its stylesheet and its fonts, and what is read off a formula it set (PLAN-maths M7). Nothing in the main chunk imports this but `host.ts`,
+// The lazy chunk: KaTeX, its stylesheet and its fonts, and what is read off a formula it set. Nothing in the main chunk imports this but `host.ts`,
 // and only through `import('./typeset')`, so a page that never shows a formula never loads a byte of it.
 //
 //   html     KaTeX's own markup (the plain renderer puts it in the page as it is)

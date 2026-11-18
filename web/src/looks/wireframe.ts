@@ -1,4 +1,4 @@
-// `wireframe` (PLAN-v2.2 E13): boxes and lines. A screen is white paper, every control is an outline, a picture is a
+// `wireframe`: boxes and lines. A screen is white paper, every control is an outline, a picture is a
 // crossed box, an accent is the ink itself. It is what an interface looks like before anyone has chosen a colour: the same
 // lines serve it and `studio`, so `look studio` after a wireframe is the wireframe becoming the design.
 //

@@ -1,4 +1,4 @@
-// Labels on the parts of a drawing (PLAN-art.md, step 7). The brain cannot know a sheet's part names, so it writes `near=fox1-tail` or
+// Labels on the parts of a drawing. The brain cannot know a sheet's part names, so it writes `near=fox1-tail` or
 // `near=rocket1-fin`, and the server settles which part is meant: the one whose name matches best, else the figure itself.
 
 /** Words that stand for each other in part names. */

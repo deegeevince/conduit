@@ -1,4 +1,4 @@
-// The anchor (PLAN-anchors section 1): an object id plus a selector. Pure and shared by the server and the page; it never holds a screen coordinate.
+// The anchor: an object id plus a selector. Pure and shared by the server and the page; it never holds a screen coordinate.
 // `Anchor` in vocabulary.ts is a named place (`top`, `center`) and keeps its name; this is `DocAnchor`.
 import type { Structure } from './source';
 import { cellOf } from './source';

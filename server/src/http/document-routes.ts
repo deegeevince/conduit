@@ -1,4 +1,4 @@
-// The document's side of the API (PLAN-v3-core WS4): the catalogue, one document, and opening one again. Each handler is one call on the
+// The document's side of the API: the catalogue, one document, and opening one again. Each handler is one call on the
 // conductor or the documents; none holds state.
 
 import { API } from '@conduit/language';

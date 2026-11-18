@@ -1,4 +1,4 @@
-// The house palette of the shelf's art (PLAN-art.md, sections 6 and 8): a small set of named hues, one for a light look and one for a dark.
+// The house palette of the shelf's art: a small set of named hues, one for a light look and one for a dark.
 // A sheet names up to three of them as colour slots, and says how much lighter or darker each of its parts is (a step of tone). Nothing else
 // in a sheet is a colour but the look's own roles, so the same fox is orange in the paper look, a little brighter in the night look, and a
 // drawing in line alone in the blueprint look.

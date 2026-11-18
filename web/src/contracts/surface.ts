@@ -1,4 +1,4 @@
-// Surfaces: the port between the stage and the sandboxed frames that run code over it (PLAN-v3-core 2.2 and 2.6). A live app is one; the
+// Surfaces: the port between the stage and the sandboxed frames that run code over it. A live app is one; the
 // lesson view will be another. The host (web/src/surfaces/host.ts) owns the frame, the policy, the protocol and the watchdog; what it runs is
 // a document (HTML with inline style and script) and what it keeps is a saved state. Nothing here acts: the protocol carries data only.
 

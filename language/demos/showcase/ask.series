@@ -1,4 +1,4 @@
-# Ask it: the pages of "What Conduit can do" for the ways a person asks (PLAN-catalogue.md). One scene to a capability, its id the capability's id,
+# Ask it: the pages of "What Conduit can do" for the ways a person asks. One scene to a capability, its id the capability's id,
 # read by language/src/showcase.ts and judged by `pnpm timeline` (the page rules, language/scripts/showcase-checks.ts). The pen, the voice and a
 # hand on the screen cannot be scripted, so those have no page here; `tap` takes two turns and keeps the second in the table (`turns`).
 

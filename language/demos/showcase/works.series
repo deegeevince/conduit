@@ -1,4 +1,4 @@
-# Things that work: the pages for what answers a hand (PLAN-catalogue.md).
+# Things that work: the pages for what answers a hand.
 
 # switch: a switch and a pick, bound to a lamp: they answer at once, with no round trip.
 scene switch figure lines=1 brisk

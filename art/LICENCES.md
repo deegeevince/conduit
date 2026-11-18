@@ -1,6 +1,6 @@
 # Art on the shelf: where each sheet came from
 
-`art/seed/*.json` are the sheets that ship with the repository (PLAN-art.md, section 6). A sheet holds Series part lines, never SVG, and carries its own
+`art/seed/*.json` are the sheets that ship with the repository. A sheet holds Series part lines, never SVG, and carries its own
 `made` and `licence` fields; this file lists them in one place.
 
 ## The seeds
@@ -71,4 +71,4 @@ pnpm art shots --subject "red-panda" --look paper,night,blueprint --out /tmp/sho
 ```
 
 Only art with a licence that allows it in this repository (CC0, MIT, Apache 2.0, or made for the project) goes in `art/seed/`; say so in the sheet's
-`licence` and add a row above. Art under a share-alike or attribution licence stays out (PLAN-art.md, "Seeds, with licences checked").
+`licence` and add a row above. Art under a share-alike or attribution licence stays out.
