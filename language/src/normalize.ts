@@ -105,6 +105,31 @@ export function readsAsProse(text: string): boolean {
 }
 
 /**
+ * Markdown's emphasis, taken off words that are to be said: `**bold**`, `__bold__`, `*italic*`, `_italic_` (not the underscores inside a name like
+ * `snake_case`), `~~struck~~` and `` `code` ``. Nothing else is touched.
+ */
+export function withoutEmphasis(text: string): string {
+  return text
+    .replace(/\*\*(\S(?:.*?\S)?)\*\*/g, '$1')
+    .replace(/(^|[^\w])__(\S(?:.*?\S)?)__(?!\w)/g, '$1$2')
+    .replace(/(^|[^\w*])\*(\S(?:[^*]*?\S)?)\*(?![\w*])/g, '$1$2')
+    .replace(/(^|[^\w])_(\S(?:[^_]*?\S)?)_(?!\w)/g, '$1$2')
+    .replace(/~~(\S(?:.*?\S)?)~~/g, '$1')
+    .replace(/`([^`]+)`/g, '$1');
+}
+
+/**
+ * fb-008. A markdown list item: a line that begins "- ", "* ", "\u2022 " or "1. " / "1) " and goes on to say something. Its words, the marker and the emphasis taken off, and the
+ * marker; null when it is not one, or when nothing with a letter or a digit in it follows the marker (a rule `---`, a lone `-`).
+ */
+export function bulletOf(text: string): { readonly marker: string; readonly words: string } | null {
+  const found = /^([-*\u2022]|\d{1,3}[.)])\s+(\S.*)$/.exec(text.trim());
+  if (found?.[1] === undefined || found[2] === undefined) return null;
+  const words = withoutEmphasis(found[2]).trim();
+  return /[\p{L}\p{N}]/u.test(words) ? { marker: found[1], words } : null;
+}
+
+/**
  * Reads raw lines in order. It is `parseLine` plus one piece of memory: while
  * a sprite is being written, a line made only of cell characters is a row of
  * it even if the brain forgot the leading bar. Without that, a row of `#`
@@ -190,11 +215,24 @@ export class LineReader {
       const retried = parseLine(`| ${trimmed}`);
       if (retried.kind === 'line') result = retried;
     }
+    // fb-008. A markdown bullet or numbered item that is no Series ("- **Mercury** goes round 8 times", "1. First thing") is said as text, its marker and its emphasis taken off:
+    // a list the brain wrote as a list is still its answer, and was refused line by line.
+    if (result.kind === 'reject' && result.issues.some((issue) => issue.code === 'unknown-verb')) {
+      const item = bulletOf(trimmed);
+      if (item !== null) {
+        const said = parseLine(`say | ${item.words}`);
+        if (said.kind === 'line') {
+          const note: Issue = { code: 'said-as-text', severity: 'warn', message: `a markdown bullet is not a verb; the line was said as text. Write \`say | …\` for words`, token: item.marker };
+          result = { ...said, issues: [note, ...said.issues] };
+        }
+      }
+    }
     // L1. A line rejected as an unknown verb that reads as a sentence is said: losing a sentence is worse than losing a flourish.
     if (result.kind === 'reject' && result.issues.some((issue) => issue.code === 'unknown-verb') && readsAsProse(trimmed)) {
       const said = parseLine(`say | ${trimmed}`);
       if (said.kind === 'line') {
-        const note: Issue = { code: 'unknown-verb', severity: 'warn', message: `"${trimmed.split(/\s+/)[0] ?? ''}" is not a verb; the line was said as text. Write \`say | …\` for words`, token: trimmed.split(/\s+/)[0] ?? '' };
+        // `said-as-text`, not `unknown-verb`: the conductor tells words the brain meant (`say | …`) from a sentence that was only rescued (fb-075)
+        const note: Issue = { code: 'said-as-text', severity: 'warn', message: `"${trimmed.split(/\s+/)[0] ?? ''}" is not a verb; the line was said as text. Write \`say | …\` for words`, token: trimmed.split(/\s+/)[0] ?? '' };
         result = { ...said, issues: [note, ...said.issues] };
       }
     }

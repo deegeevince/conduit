@@ -172,7 +172,8 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
     const held = reply(current.replyId);
     if (held === null) return;
     const done = ended.get(current.turn);
-    const note = state === 'failed' ? (done?.message ?? 'The reply did not finish.') : state === 'stopped' ? 'Stopped before it finished.' : null;
+    // (a turn that ended well with a message of its own: nothing was drawn, even when the brain was asked again, fb-075)
+    const note = state === 'failed' ? (done?.message ?? 'The reply did not finish.') : state === 'stopped' ? 'Stopped before it finished.' : done?.reason === 'done' && done.message !== null && done.message !== '' ? done.message : null;
     replace({ ...held, reply: readReply(current.turn), state, note, still: still ?? held.still });
   };
 

@@ -147,7 +147,9 @@ if (argument === 'demos') {
   ok = reading && rules && ok;
 }
 if (argument === 'showcase') ok = showcaseChecks(true) && ok;
-if (argument !== undefined && argument !== 'examples' && argument !== 'all' && argument !== 'reading' && argument !== 'demos' && argument !== 'showcase') {
+// the checks of the owner's feedback that the language settles (docs/feedback.md), alone: `pnpm check --only fb-008` runs them
+if (argument === 'feedback') ok = feedbackChecks() && ok;
+if (argument !== undefined && argument !== 'examples' && argument !== 'all' && argument !== 'reading' && argument !== 'demos' && argument !== 'showcase' && argument !== 'feedback') {
   const path = argument.endsWith('.series') ? argument : fileURLToPath(new URL(`../demos/${argument}.series`, import.meta.url));
   ok = run(argument, readFileSync(path, 'utf8')) && ok;
 }

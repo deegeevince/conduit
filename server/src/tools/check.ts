@@ -22,6 +22,8 @@
 //                      the drawn part or on plain words; with a mouse and a finger; the journey's `tap | Brakes` finds "brake disc" (label-check.ts)
 //   fb-064             the Undo chip puts the answer before back whole: the car's labels (and a click on one asks about it), its words and its choice, and nothing of the answer it
 //                      undid stands over it (undo-check.ts)
+//   fb-075, fb-008     a turn that drew nothing (an "ok" after four tool calls; prose and refused markdown bullets) is told so and asked once more in the same turn, "Trying again…" first, never twice; bullets are
+//                      said as text, not refused: the real server with a stand-in for the brain's CLI (empty-check.ts, no model)
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
 //                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
 //
@@ -77,6 +79,7 @@ import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
 import { livePages, painterCaps, showcaseCase, showcaseCategory, tableResults } from './showcase-check';
 import { mathsGroup } from './math-check';
+import { emptyGroup } from './empty-check';
 import { motionGroup } from './motion-check';
 import { checkGlyphs, checkInk, checkListings, checkSlideWords, checkTakeover, flowsGroup, footprintJudge, photoGroup, sceneFactsOf, streamBrainCheck, streamFixtureCheck, testPattern } from './real-check';
 import type { Footprint } from './real-check';
@@ -1812,6 +1815,18 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       const results = await fb062Group(plain);
       out.lines.push('\nfb-062 (1344x866: a title on words, and the fixes that dodge it)');
       checkLines(out, results);
+    },
+  });
+  // fb-075 and fb-008 (docs/feedback.md): a turn that drew nothing is told so and asked once more; markdown bullets are said, not refused. `--only fb-075` runs just this.
+  units.push({
+    name: 'fb-075',
+    also: ['fb-008'],
+    needs: 'none',
+    weight: 20,
+    run: async (_servers, out) => {
+      const results = await emptyGroup(plain, join(args.out, 'fb-075'), args.timeoutMs);
+      out.lines.push('\nfb-075 (a server whose brain is a stand-in CLI: a turn that wrote "ok" after four tool calls, one that wrote nothing twice, one of prose and markdown bullets, one that drew; and, with no server, how the reader takes a markdown bullet: `pnpm timeline feedback`)');
+      checkLines(out, [...results, ...(await scriptGroup('fb-008-reader', ['timeline', 'feedback'], 'a markdown bullet or numbered item that is no Series is said as text, its marker and emphasis off, with a warning; what is no list item is not touched'))]);
     },
   });
   units.push({
