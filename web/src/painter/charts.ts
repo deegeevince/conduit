@@ -2,8 +2,8 @@
 // from the look, and handed to the charting engine's surface as a `ChartFrame`, which says where the surface goes and what to show. This
 // file is the pure half: (schedule, time, data) in, frames out. The engine, and the DOM it lives in, belong to the app.
 
-import { CHART_REVEAL_SECONDS, cachedChartModel, readNumber, readWhen, styleAt } from '@conduit/language';
-import type { ChartModel, DataTable, ElementSpan, Scope, Schedule, StructureRow } from '@conduit/language';
+import { CHART_REVEAL_SECONDS, cachedChartModel, chartModelOf, chartNames, readNumber, readWhen, styleAt } from '@conduit/language';
+import type { ChartKind, ChartModel, ControlSpec, DataTable, ElementSpan, Scope, Schedule, StructureRow } from '@conduit/language';
 import type { ChartMark, ChartState, ChartTheme } from '../contracts/chart';
 import type { ChartFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
@@ -12,6 +12,7 @@ import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { chartThemeOf } from '../render/chart/theme';
 import type { CanvasFit } from './canvas';
 import { clamp01 } from './affine';
+import { controlSpecOf } from './bound';
 
 /** What has come of the DATA a chart asked for, by id. A table is there; null: it could not be had; absent: still on its way. */
 export interface ChartData {
@@ -65,6 +66,118 @@ function markX(model: ChartModel, text: string): number | null {
   return null;
 }
 
+// ---- a chart that follows a control keeps its scale (fb-071)
+//
+// The cells of a chart may be `{speed * speed / 20}`: the chart is then read again at every value the control passes through, and a scale fitted to each reading
+// rescales as it moves, so a bar barely seems to grow as the value rises. The scale is fitted instead to the readings at the values the control can hold: the two
+// of its readings that go lowest and highest are handed to the engine beside the one on stage (`ChartState.reach`), and it fits the scale to all three.
+
+/** the most readings of a chart taken to find how far it goes */
+const MOST_READINGS = 200;
+/** the most values of one slider read: its ends and the points between */
+const MOST_SLIDER_VALUES = 33;
+
+const namesOfRows = new WeakMap<readonly StructureRow[], readonly string[]>();
+const reaches = new WeakMap<object, Map<string, readonly ChartModel[]>>();
+
+/** `count` values spread over `values`, the first and the last among them */
+function spread(values: readonly number[], count: number): number[] {
+  if (values.length <= count) return [...values];
+  return Array.from({ length: count }, (_, at) => values[Math.round((at * (values.length - 1)) / (count - 1))] ?? 0);
+}
+
+/** The values a control can hold, `count` of them at most: a slider's ends and between (by its step, when it has one), a toggle's two, a pick's options by number; null for what holds no range of values */
+function heldValues(spec: ControlSpec, count: number): number[] | null {
+  if (spec.control === 'toggle') return [0, 1];
+  if (spec.control === 'pick') return spec.options.length < 2 ? null : spread(spec.options.map((_, at) => at + 1), count);
+  if (spec.control !== 'slider' || !(spec.max > spec.min)) return null;
+  const step = spec.step !== null && spec.step > 0 ? spec.step : null;
+  const snapped = (value: number): number => (step === null ? value : Math.min(spec.max, spec.min + Math.round((value - spec.min) / step) * step));
+  const asked = Math.max(2, Math.min(count, MOST_SLIDER_VALUES));
+  return [...new Set(Array.from({ length: asked }, (_, at) => snapped(spec.min + ((spec.max - spec.min) * at) / (asked - 1))))];
+}
+
+/** The lowest and highest value of any series of the model but its volume: what its scale must hold */
+function extent(model: ChartModel): { readonly lo: number; readonly hi: number } {
+  let lo = Number.POSITIVE_INFINITY;
+  let hi = Number.NEGATIVE_INFINITY;
+  for (const series of model.series) {
+    if (series.role === 'volume') continue;
+    for (const value of series.values) {
+      if (value === null) continue;
+      lo = Math.min(lo, value);
+      hi = Math.max(hi, value);
+    }
+  }
+  return { lo, hi };
+}
+
+const NONE: readonly ChartModel[] = [];
+
+/**
+ * The readings of a chart, among all the values its controls can hold, that go lowest and highest: the models the scale must also take in. Empty when no cell follows a control that
+ * has a range of values. Remembered per chart and per what the controls can hold (a slider is read again at each value it passes through, and this only once).
+ */
+function reachOf(owner: object, kind: ChartKind, rows: readonly StructureRow[], scope: Scope, schedule: Schedule): readonly ChartModel[] {
+  let names = namesOfRows.get(rows);
+  if (names === undefined) {
+    names = chartNames(rows);
+    namesOfRows.set(rows, names);
+  }
+  if (names.length === 0) return NONE;
+  const specs = new Map<string, ControlSpec>();
+  for (const element of schedule.elements) {
+    const spec = controlSpecOf(element);
+    if (spec !== null && names.includes(element.id)) specs.set(element.id, spec);
+  }
+  const varying = names.filter((name) => {
+    const spec = specs.get(name);
+    return spec !== undefined && heldValues(spec, 2) !== null;
+  });
+  if (varying.length === 0) return NONE;
+  const each = Math.max(2, Math.floor(MOST_READINGS ** (1 / varying.length)));
+  const grids = varying.map((name) => heldValues(specs.get(name) as ControlSpec, each) as number[]);
+  const held = names.filter((name) => !varying.includes(name)).map((name) => `${name}=${scope[name] ?? ''}`);
+  const key = `${kind}|${rows.length}|${varying.map((name, at) => `${name}:${(grids[at] as number[]).join(',')}`).join(';')}|${held.join(';')}`;
+  let known = reaches.get(owner);
+  if (known === undefined) {
+    known = new Map();
+    reaches.set(owner, known);
+  }
+  const found = known.get(key);
+  if (found !== undefined) return found;
+  let lowest: { readonly model: ChartModel; readonly value: number } | null = null;
+  let highest: { readonly model: ChartModel; readonly value: number } | null = null;
+  const at = varying.map(() => 0);
+  for (;;) {
+    const reading: Record<string, number> = { ...scope };
+    varying.forEach((name, index) => {
+      reading[name] = (grids[index] as number[])[at[index] as number] ?? 0;
+    });
+    const model = chartModelOf(kind, rows, reading);
+    const { lo, hi } = extent(model);
+    if (Number.isFinite(lo) && (lowest === null || lo < lowest.value)) lowest = { model, value: lo };
+    if (Number.isFinite(hi) && (highest === null || hi > highest.value)) highest = { model, value: hi };
+    // the next reading: the last control counts up first
+    let place = varying.length - 1;
+    while (place >= 0 && (at[place] as number) + 1 >= (grids[place] as number[]).length) {
+      at[place] = 0;
+      place -= 1;
+    }
+    if (place < 0) break;
+    at[place] = (at[place] as number) + 1;
+  }
+  const made = lowest === null || highest === null ? NONE : lowest.model === highest.model ? [lowest.model] : [lowest.model, highest.model];
+  known.set(key, made);
+  for (const oldest of known.keys()) {
+    if (known.size <= 4) break;
+    known.delete(oldest);
+  }
+  return made;
+}
+
+const sameModels = (a: readonly ChartModel[], b: readonly ChartModel[]): boolean => a.length === b.length && a.every((model, at) => model === b[at]);
+
 export function chartFrames(schedule: Schedule, tq: number, aq: number, look: LookSpec, env: ChartEnv): ChartFrame[] {
   const out: ChartFrame[] = [];
   const live = new Set<string>();
@@ -102,6 +215,8 @@ export function chartFrames(schedule: Schedule, tq: number, aq: number, look: Lo
     const rows = byReference ? (arrived?.table == null ? [] : rowsOfTable(arrived.table)) : figure.rows;
     const owner: object = byReference ? (arrived?.table ?? figure) : figure;
     const model = cachedChartModel(owner, figure.chart, rows, env.scope);
+    // the scale holds still as the controls the cells follow move (fb-071)
+    const reach = byReference ? NONE : reachOf(owner, figure.chart, rows, env.scope, schedule);
 
     // how far it is in, and out
     let opacity = 1;
@@ -143,9 +258,9 @@ export function chartFrames(schedule: Schedule, tq: number, aq: number, look: Lo
     live.add(element.key);
     const kept = states.get(element.key);
     let state: ChartState;
-    if (kept !== undefined && kept.signature === signature && (kept.state.model === model) && kept.state.theme === theme) state = kept.state;
+    if (kept !== undefined && kept.signature === signature && kept.state.model === model && kept.state.theme === theme && sameModels(kept.state.reach ?? NONE, reach)) state = kept.state;
     else {
-      state = { kind: figure.chart, words: figure.words, title: element.text, model, marks, theme, reveal, landed, interactive, waiting, failed, reducedMotion: env.reducedMotion };
+      state = { kind: figure.chart, words: figure.words, title: element.text, model, ...(reach.length === 0 ? {} : { reach }), marks, theme, reveal, landed, interactive, waiting, failed, reducedMotion: env.reducedMotion };
       states.set(element.key, { signature, state });
     }
     out.push({ key: element.key, id: element.id, layer: element.style.layer, z: element.order, box, rest, opacity, state, tappable: false });

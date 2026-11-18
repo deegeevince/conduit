@@ -6,6 +6,7 @@
 //   fill       `fill` writes its digits into the blanks, by place
 //   rule       the rule spans every column of the sum
 //   clear      no two cells overlap, and the block is on the screen
+//   hint       the longest hint of a sum (an exchange) stands under the buttons, clear of them
 //
 // The page's half is `web/src/bench/math-bench.ts` (the real painter, a renderer that keeps the last frame). Run by `pnpm check` and standalone (`tsx math-check.ts`).
 //
@@ -72,7 +73,7 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
     }
     blocks += 1;
     const worked = /\bworked\b/.test(one.lines[0] ?? '');
-    const typedBy = one.lines.some((line) => line.startsWith('type ') || line.startsWith('press '));
+    const typedBy = one.lines.some((line) => line.startsWith('type ') || /^press \S+ check$/.test(line));
     const filled = one.lines.some((line) => line.startsWith('fill '));
     const isGrid = method === 'column' || method === 'times' || method === 'split' || method === 'bond';
     // 1. place: every digit cell of one place, in any row, stands on one x (carries and exchanges are set smaller, in the same column)
@@ -109,6 +110,14 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
       const ones = elements.find((e) => partOf(e.key) === 'c:ans-ones')?.text;
       if (tens !== '2' || ones !== '4') problems.push(`${where}: fill 24 put "${tens}" and "${ones}" in the tens and ones`);
     }
+    // 4a. hint (fb-096): the words of a hint, longest of the sum (an exchange takes several lines), stand under the buttons and clear of them
+    if (one.lines.some((text) => /^press \S+ hint$/.test(text))) {
+      const hint = elements.find((e) => partOf(e.key) === 'hint');
+      const bottoms = figures.filter((f) => partOf(f.key).startsWith('btn:')).map((f) => f.y1);
+      if (hint === undefined) problems.push(`${where}: the hint said no words`);
+      else if (bottoms.length === 0) problems.push(`${where}: no buttons to say a hint under`);
+      else if (hint.y - hint.height / 2 < Math.max(...bottoms) - 0.5) problems.push(`${where}: the hint's words begin ${(Math.max(...bottoms) - (hint.y - hint.height / 2)).toFixed(0)} units above the buttons' lower edge, over them`);
+    }
     // 4b. typed: a digit a keyboard wrote stands in its cell, typeset (a text part of the block, centred in the box), and the answer is not drawn elsewhere
     for (const line of one.lines.filter((text) => text.startsWith('type '))) {
       const m = /^type \S+\.(\S+) \| (\d+)$/.exec(line);
@@ -127,7 +136,7 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
         if (mark.x1 > e.x - w / 2 && mark.x0 < e.x + w / 2 && mark.y1 > e.y - h / 2 && mark.y0 < e.y + h / 2) problems.push(`${where}: the mark ${partOf(mark.key)} lies on the digit ${partOf(e.key)}`);
       }
     }
-    if (one.lines.some((line) => line.startsWith('press ')) && figures.filter((f) => /^(ok|bad):/.test(partOf(f.key))).length < 2) problems.push(`${where}: Check left fewer than two marks (a tick and a cross)`);
+    if (one.lines.some((line) => /^press \S+ check$/.test(line)) && figures.filter((f) => /^(ok|bad):/.test(partOf(f.key))).length < 2) problems.push(`${where}: Check left fewer than two marks (a tick and a cross)`);
     // 5. rule: spans the columns of every digit and sign
     const rule = figures.find((f) => partOf(f.key) === 'rule');
     if (isGrid && method !== 'split' && method !== 'bond') {
@@ -183,10 +192,13 @@ export async function startMathsServer(extra: Readonly<Record<string, string>> =
   const scratch = await mkdtemp(join(tmpdir(), 'conduit-maths-'));
   await mkdir(join(scratch, 'skills'), { recursive: true });
   const port = await claimPort('a maths server');
+  // fb-091. A sum that is finished is an act turn for the brain: the replay brain answers it with a pause, so the page holds as it was marked (each act once a session, so many)
+  const acts = join(scratch, 'acts.json');
+  await writeFile(acts, JSON.stringify({ turns: Array.from({ length: 300 }, () => ({ match: 'kind:act', script: 'wait 0.2s' })) }));
   let log = '';
   const child: ChildProcess = spawnTracked(process.execPath, ['--import', 'tsx', 'src/main.ts'], undefined, {
     cwd: join(root, 'server'),
-    env: { NODE_ENV: 'production', BRAIN: 'replay', HOST: '127.0.0.1', PORT: String(port), DATA_DIR: join(scratch, 'data'), SKILL_ROOTS: join(scratch, 'skills'), LIBRARY: 'seed', READ_LINKS: 'off', LOG_LEVEL: 'warn', REPLAY_CPS: '3000', ...extra },
+    env: { NODE_ENV: 'production', BRAIN: 'replay', HOST: '127.0.0.1', PORT: String(port), DATA_DIR: join(scratch, 'data'), SKILL_ROOTS: join(scratch, 'skills'), LIBRARY: 'seed', READ_LINKS: 'off', LOG_LEVEL: 'warn', REPLAY_CPS: '3000', REPLAY_CASE: acts, ...extra },
   });
   for (const stream of [child.stdout, child.stderr]) stream?.on('data', (chunk: Buffer) => (log = (log + chunk.toString()).slice(-4000)));
   const url = `http://127.0.0.1:${port}`;
@@ -471,6 +483,55 @@ async function hintScene(mine: MathsTab, dir: string, problems: Problems): Promi
   return { checked, hinted };
 }
 
+/** fb-091. A sum that is finished goes to the brain as an act turn, with how she got there; a wrong try goes to it only as a line to hear with the next. Show me that gives the last box finishes it too. */
+async function sendScene(mine: MathsTab, problems: Problems): Promise<void> {
+  const list = problems['send'] as string[];
+  const played = await mine.play(['scene layout=stack mood=calm', 'math m9 column | 1+1'].join('\n'));
+  if (played !== '') return void list.push(played);
+  const turns = (): number => mine.tab.posted.filter((turn) => turn.kind === 'act').length;
+  const press = async (name: string): Promise<void> => {
+    const button = (await mine.block('m9'))?.buttons.find((candidate) => candidate.name === name);
+    if (button === undefined) throw new Error(`no ${name} button on m9`);
+    await mine.hands.finger([await mine.centre(button.box)]);
+    await sleep(300);
+  };
+  const write = async (digit: string): Promise<void> => {
+    await mine.hands.finger([await mine.centre((await mine.cell('m9', 'ans-ones'))?.box ?? { x: 0, y: 0, width: 1, height: 1 })]);
+    await mine.press('Backspace');
+    await mine.press(digit);
+    await sleep(150);
+  };
+  const before = turns();
+  await write('3');
+  await press('check');
+  if (turns() !== before) list.push('a wrong Check sent a turn to the brain: only a finished sum is meant to');
+  await press('hint');
+  await write('2');
+  await press('check');
+  await waitFor('the act turn of the finished sum', 8_000, async () => (turns() > before ? true : null)).catch(() => undefined);
+  const sent = mine.tab.posted.filter((turn) => turn.kind === 'act').slice(before).map((turn) => turn.text ?? '');
+  if (sent.length !== 1) list.push(`finishing the sum sent ${sent.length} act turn(s) (${JSON.stringify(sent)}), wanted one`);
+  else if (sent[0] !== 'm9: all right, after 1 wrong check (ones 3) and 1 hint') list.push(`the act that finished the sum says "${sent[0]}", wanted "m9: all right, after 1 wrong check (ones 3) and 1 hint"`);
+  // Show me that gives the last box finishes it as well, and says so
+  const shown = await mine.play(['scene layout=stack mood=calm', 'math m10 column | 1+1'].join('\n'));
+  if (shown !== '') return void list.push(shown);
+  const first = turns();
+  await mine.hands.finger([await mine.centre((await mine.cell('m10', 'ans-ones'))?.box ?? { x: 0, y: 0, width: 1, height: 1 })]);
+  await mine.press('4');
+  const check = (await mine.block('m10'))?.buttons.find((candidate) => candidate.name === 'check');
+  if (check !== undefined) await mine.hands.finger([await mine.centre(check.box)]);
+  await sleep(300);
+  const show = (await mine.block('m10'))?.buttons.find((candidate) => candidate.name === 'show');
+  if (show === undefined) return void list.push('Show me was not offered on m10 after a wrong try');
+  await mine.hands.finger([await mine.centre(show.box)]);
+  await waitFor('the act turn of the shown sum', 8_000, async () => (turns() > first ? true : null)).catch(() => undefined);
+  const told = mine.tab.posted.filter((turn) => turn.kind === 'act').slice(first).map((turn) => turn.text ?? '');
+  // fb-093. A finger on a box or a button works the block and is not also "the user pointed at" it: the brain is told of the acts, not of a tap on a block it cannot name a part of
+  const pointed = await mine.tab.eval<number>(`window.__stage.events().filter((e) => e.type === 'tap' && /^m(9|10)$/.test(e.id)).length`);
+  if (pointed !== 0) list.push(`${pointed} finger press(es) on the written method were also told as taps on it ("the user pointed at m9"), wanted none`);
+  if (told.length !== 1 || !/^m10: was shown the ones/.test(told[0] ?? '')) list.push(`the Show me that finished the sum sent ${JSON.stringify(told)}, wanted one act "m10: was shown the ones…"`);
+}
+
 /** `fill m1 | 72` and `fill m1.ans-ones | 2` put digits in the cells, once, marked as a Check marks them; a hand after a fill wins. */
 async function fillScene(mine: MathsTab, problems: Problems): Promise<void> {
   const list = problems['fill'] as string[];
@@ -647,6 +708,32 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
     const mixed = (await mine.block('m7'))?.cells.filter((cell) => cell.part !== 'carry-tens').map((cell) => `${cell.part}=${cell.value}:${cell.by}:${cell.mark}`).sort().join(' ');
     if (mixed !== 'ans-ones=4:pen:right ans-tens=2:key:right') list.push(`the pen in the ones and keys in the tens, then Enter, left "${mixed}"`);
   }
+  // 7. fb-097: the working a sum had written leaves with the sum. A new sum under the same id starts clean (no ink owned, none in its boxes), and a scene with no written
+  // method takes the ink off as well
+  const own = async (id: string): Promise<number> => (await owners()).filter((o) => o.key.startsWith(id)).length;
+  const inkA = await mine.play(['scene layout=stack mood=calm', 'math m11 column | 12+12'].join('\n'));
+  if (inkA !== '') list.push(inkA);
+  else {
+    // (a stroke written far above every box, earlier, is free working and stays: the count is against what stood before)
+    const base = await strokes();
+    await stroke('m11', 'ans-ones', [0.3, 0.2], [0.35, 0.8], 6);
+    if ((await own('m11')) !== 1) list.push(`a stroke in m11 is owned by ${await own('m11')} stroke(s), wanted 1`);
+    const inkB = await mine.play(['scene layout=stack mood=calm', 'math m11 column | 13+13'].join('\n'));
+    if (inkB !== '') list.push(inkB);
+    else {
+      await sleep(400);
+      if ((await own('m11')) !== 0) list.push(`a new sum under the id m11 kept the old sum's ink (${await own('m11')} stroke(s) owned)`);
+      if ((await mine.cell('m11', 'ans-ones'))?.ink !== false) list.push("the new sum's ones box still says it holds ink");
+      if ((await strokes()) !== base) list.push(`${(await strokes()) - base} stroke(s) of the old working are still drawn under the new sum`);
+      await stroke('m11', 'ans-ones', [0.3, 0.2], [0.35, 0.8], 6);
+      const inkC = await mine.play(['scene layout=stack mood=calm', 'say r1 | No sum here.'].join('\n'));
+      if (inkC !== '') list.push(inkC);
+      else {
+        await sleep(400);
+        if ((await own('m11')) !== 0 || (await strokes()) !== base) list.push(`a scene with no written method left ${(await strokes()) - base} stroke(s) of its working drawn and ${await own('m11')} owned`);
+      }
+    }
+  }
   return penned;
 }
 
@@ -676,7 +763,7 @@ async function darkScene(base: string, screen: InputScreen, dir: string, timeout
 
 /** One screen's whole input run. */
 async function inputScreen(base: string, screen: InputScreen, dir: string, timeoutMs: number, note: (text: string) => void): Promise<{ results: CheckResult[]; pictures: string[] }> {
-  const problems: Problems = { keys: [], hint: [], fill: [], pen: [], notes: [] };
+  const problems: Problems = { keys: [], hint: [], fill: [], pen: [], send: [], notes: [] };
   const pictures: string[] = [];
   note(`maths input: ${screen.name}`);
   const mine = await MathsTab.open(base, screen, dir, timeoutMs);
@@ -685,6 +772,7 @@ async function inputScreen(base: string, screen: InputScreen, dir: string, timeo
     const { checked, hinted } = await hintScene(mine, dir, problems);
     pictures.push(checked, hinted);
     await fillScene(mine, problems);
+    await sendScene(mine, problems);
     pictures.push(await darkScene(base, screen, dir, timeoutMs, problems));
     pictures.push(await penScene(mine, dir, problems));
   } catch (error) {
@@ -701,6 +789,7 @@ async function inputScreen(base: string, screen: InputScreen, dir: string, timeo
   for (const text of problems['notes'] ?? []) results.push({ turn: 0, check: 'maths-note', verdict: 'PASS', detail: `note: ${text}` });
   add('keys', 'a finger tap focuses a cell inside the gesture; 2 moves to the carry then the tens; Backspace, Tab and the arrows walk the sum; Enter marks it; the active cell stays above a short visual viewport');
   add('hint', 'Hint lights the next cell and says its step without its digit; Show me comes only after a wrong try and fills one cell as shown');
+  add('send', 'a wrong Check sends nothing; the Check that finishes the sum sends one act turn, saying how she got there (wrong checks and what was wrong, hints); Show me that gives the last box sends one too');
   add('fill', 'fill m1 | 72 and fill m1.ans-ones | 2 put marked digits in the cells, and a later hand wins');
   add('pen', 'with Draw closed a pen stroke is one stroke owned by its cell, the larger share wins, a finger and a palm leave no ink, a short pen tap is a press; the fake reader reads both cells in one request and Check marks them; a misread is corrected by a tap and a typed digit, the ✕ clears; pen and keys mix');
   return { results, pictures };

@@ -7,7 +7,7 @@
 // canvas units, from the schedule alone (`canvasBoxOf` stops here). The second
 // puts the look's colour, stroke and motion on it and maps it to the stage.
 
-import { boundsOf, CANVAS, cycleAt, describeFigure, LOOP_DEFAULT, loopOffset, NO_OFFSET, pointAlong, polylineLength, resample, rideShare, ROW_SECONDS, sceneAt, turnAbout, valueAt } from '@conduit/language';
+import { boundsOf, CANVAS, cycleAt, describeFigure, LOOP_DEFAULT, loopOffset, NO_OFFSET, pointAlong, polylineLength, rideShare, ROW_SECONDS, sceneAt, turnAbout, valueAt } from '@conduit/language';
 import type { Anchor, ElementChange, ElementSpan, ElementStyle, Fill, Figure, Layer, LoopOffset, Paint, Polyline, Schedule, SceneSpan, ShapeGeometry, SpriteData, StageBase, StrokeCharacter } from '@conduit/language';
 import type { Affine, Colour, FieldFrame, FigureFrame, FillFrame, PictureFrame, ShapeFrame, SpriteFrame, StrokeFrame } from '../contracts/frame';
 import { IDENTITY } from '../contracts/frame';
@@ -387,20 +387,6 @@ function resolveAt(style: ElementStyle, element: ElementSpan, natural: Pt, sc: S
 
 const startShares = new WeakMap<MoveChange, number>();
 
-function nearestShare(line: Polyline, point: Pt): number {
-  const samples = resample(line, 240);
-  let best = Number.POSITIVE_INFINITY;
-  let share = 0;
-  samples.forEach((sample, i) => {
-    const d = (sample.x - point.x) ** 2 + (sample.y - point.y) ** 2;
-    if (d < best - 1e-12) {
-      best = d;
-      share = line.closed ? i / samples.length : i / (samples.length - 1);
-    }
-  });
-  return share;
-}
-
 function trackOutline(key: string, sc: Scn): Polyline | null {
   const route = laidOutOf(sc.schedule)?.routeOf(key, sc.tq);
   if (route !== undefined && route !== null) return route;
@@ -419,10 +405,13 @@ function centreOf(element: ElementSpan, trans: Trans, natural: Pt, sc: Scn): Pt 
     if (line !== null) {
       let first = startShares.get(move);
       if (first === undefined) {
-        first = nearestShare(line, a);
+        first = shareNear(line, a);
         startShares.set(move, first);
       }
-      const here = pointAlong(line, lerp(first, 1, trans.p));
+      // The drawing is the start. On a closed outline one whole range (a slider's, a move's time) is one lap from where it was drawn, the way a ride on the clock is (`rideShare`:
+      // round and round from the share it was drawn at), so a thing drawn at 3 o'clock is at 9 o'clock half way and back at 3 at the end. An open outline is gone along, from where
+      // it was drawn to its far end.
+      const here = pointAlong(line, line.closed ? rideShare(first, trans.p, true) : lerp(first, 1, trans.p));
       const anchor = pointAlong(line, first);
       // A mover that did not start on the line eases onto it; one that did is always on it.
       if (Math.hypot(a.x - anchor.x, a.y - anchor.y) <= 2) return here;

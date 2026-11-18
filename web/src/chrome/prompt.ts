@@ -131,22 +131,24 @@ export function mountPromptBar(
     const r = root.getBoundingClientRect();
     if (s.width === 0 || r.width === 0) return;
     const off = Math.abs(s.left + s.width / 2 - (r.left + r.width / 2)) > 1.5;
-    if (!off) {
-      float.style.left = '';
-      float.style.right = '';
-      return;
-    }
-    float.style.left = `${Math.round(s.left - r.left + 8)}px`;
-    float.style.right = `${Math.round(r.right - s.right + 8)}px`;
+    const left = off ? `${Math.round(s.left - r.left + 8)}px` : '';
+    const right = off ? `${Math.round(r.right - s.right + 8)}px` : '';
+    if (float.style.left !== left) float.style.left = left;
+    if (float.style.right !== right) float.style.right = right;
   };
   if (typeof ResizeObserver !== 'undefined') {
+    // The column moves when the page's layout does: a resize of the window or of the stage (watched here, which runs once a frame, after layout) and a switch of the layout on the page's grid
+    // (the language pane opening or closing sets `data-lang` on it). The switch is watched by a mutation observer too: its callback runs in the same task as the change, so the line is
+    // never over the page's middle for a frame while the stage is already in its new column (a script that looks between the change and the next frame saw that).
     const place = new ResizeObserver(centreOnStage);
     place.observe(root);
+    const layout = new MutationObserver(centreOnStage);
     let tries = 0;
     const find = (): void => {
       const stage = document.getElementById('stage');
       if (stage !== null) {
         place.observe(stage);
+        if (stage.parentElement !== null) layout.observe(stage.parentElement, { attributes: true });
         centreOnStage();
       } else if ((tries += 1) < 30) requestAnimationFrame(find);
     };

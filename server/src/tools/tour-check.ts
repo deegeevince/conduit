@@ -9,7 +9,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { TOUR_CHAPTERS } from '@conduit/language';
 import { sleep } from './explore-browser';
-import { checkPill, checkTourBar } from './demo-check';
+import { checkPill, checkPillThroughToggles, checkTourBar } from './demo-check';
 import { Conversation, Tab } from './smoke';
 import type { LensScene, LensScreen } from './lens-check';
 import type { CheckResult, Options } from './smoke';
@@ -144,10 +144,16 @@ export async function tourGroup(base: string, screen: LensScreen, dir: string, t
       if (await tapCard('Watch the picture being written')) {
         // while it plays, the line over the stage's lower edge holds "Show all"; tapped, it says where the earlier scenes are. Each stands over the middle of the stage's column (fb-006), on one line
         const pillUp = (): Promise<boolean> => tab.eval<boolean>(`(() => { const t = document.querySelector('.prompt__top'); return !!t && !t.hidden && t.offsetParent !== null; })()`);
+        // the line is up from the tour's own page (it says it is playing), so it is the pane that is waited for: looked at before the pane opens, the line is trivially over the stage's middle
+        await until('the language pane to open beside the stage', () => tab.eval<boolean>(`document.getElementById('app').dataset.lang === 'on'`), 15_000);
         if (!(await until('the line over the stage (Show all) while the language view plays', pillUp, 15_000))) list.push('there was no line over the stage while the language view played');
         else {
+          // looked at the moment the pane is open, with no wait for a frame: the line stands over the stage's column as soon as the stage is in it
           const pill = await checkPill(tab);
           if (pill.length > 0) list.push(`the language view, Show all: ${pill.join('; ')}`);
+          // and through five quick switches of the pane, looked at between the switch and the next frame, and 300 ms on
+          const toggled = await checkPillThroughToggles(tab);
+          if (toggled.length > 0) list.push(`the language view, switched on and off: ${toggled.join('; ')}`);
           await tab.eval(`document.querySelector('.action--show').click()`);
           // the note is said only when the stage can rest on the last of several scenes; when it is, it stands where the Show all line did
           let noted = false;
