@@ -617,6 +617,7 @@ async function start(): Promise<void> {
     upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
     lastTurn: () => mounted.lastTurn(),
     capture: (maxSide) => mounted.capture(maxSide),
+    moment: () => mounted.moment(),
     prompt: (words, marks) => mounted.prompt(words, [], marks),
     announce: (text) => mounted.announce(text),
   }, { guard: penGuard });

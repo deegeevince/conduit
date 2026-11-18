@@ -163,6 +163,8 @@ export interface StageApp {
   showPage(source: string): void;
   /** v2.1. The id of the turn on stage, or the last that ended; null before the first. */
   lastTurn(): string | null;
+  /** Where the stage is, as two numbers and so for nothing: the turn on it (as `lastTurn`) and how far that turn has played. A drawing remembers this when it begins, in place of a picture of the stage (which costs a render and a read-back). */
+  moment(): { readonly turn: string | null; readonly playhead: number };
   /** The back-channel events actually handed to the link, oldest first (the last 200); taps the app set aside are not among them. */
   sentEvents(): readonly BackEvent[];
   /** The canonical lines of the last turn that ended, one per line; '' before there is one. */
@@ -2236,6 +2238,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     choose(key) {
       painter.tapElement(key);
     },
+    moment: () => ({ turn: app.lastTurn(), playhead: painter.snapshot().playhead }),
     sentEvents: () => [...sent],
     showAll() {
       painter.showAll();

@@ -133,6 +133,16 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
   const anywhere = lens !== null;
   const model = ink.ink.model;
   ink.through(true);
+  // fb-101. While a written method has cells to write in, the stage takes the Pencil with no gesture of the browser's to wait for: `touch-action: none` (the stage is `pinch-zoom` otherwise, which
+  // leaves the browser free to read a resting hand and the pen as a pinch, and a pinch cancels the pen's stream; Safari's own arbitration cannot be seen from a desktop browser, so this is the
+  // safe setting, not a measured fix). Only while there is a sum to write in, so that nothing else on the page changes for a finger.
+  const touchActionWas = host.style.touchAction;
+  const takePen = (views: readonly MathBlockView[]): void => {
+    if (anywhere) return;
+    const writing = views.some((view) => view.verdict !== 'right' && view.verdict !== 'shown' && view.cells.length > 0);
+    const want = writing ? 'none' : touchActionWas;
+    if (host.style.touchAction !== want) host.style.touchAction = want;
+  };
 
   /** a point of the screen as a point of the page the strokes live on */
   const pageOf = (clientX: number, clientY: number): { x: number; y: number } => {
@@ -226,14 +236,16 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
         schedule();
       }
     }
-    const zones = zonesOf(options.views());
+    // the painter's views are made once for the change (each call builds them for every written method on the stage)
+    const views = options.views();
+    const zones = zonesOf(views);
     let added = false;
     for (const stroke of model.strokes) {
       if (owner.has(stroke.id)) continue;
       const own = cellOf(stroke, zones);
       owner.set(stroke.id, own);
       if (own === null) continue;
-      const sum = options.views().find((view) => view.key === own.key)?.sum;
+      const sum = views.find((view) => view.key === own.key)?.sum;
       if (sum !== undefined) sumOf.set(stroke.id, sum);
       const ck = cellKey(own.key, own.part);
       version.set(ck, (version.get(ck) ?? 0) + 1);
@@ -408,6 +420,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     },
     flush,
     sync(views) {
+      takePen(views);
       // fb-097. The working a sum had written leaves with the sum: ink owned by a block that is no longer on the stage, or that now works another sum under the same id, is taken off
       const stale = model.strokes.filter((stroke) => {
         const own = owner.get(stroke.id);
@@ -428,6 +441,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.removeEventListener(type, onPen as EventListener, true);
       host.removeEventListener('pointerdown', onTouch, true);
       ink.through(false);
+      host.style.touchAction = touchActionWas;
       delete hook.__penWrite;
     },
   };

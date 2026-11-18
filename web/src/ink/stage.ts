@@ -20,6 +20,8 @@ export interface StageInkApp {
   lastTurn(): string | null;
   /** a picture of the stage as it is, as a data URL; null when there is none */
   capture(maxSide: number): Promise<string | null>;
+  /** where the stage is, for nothing: the turn on it and how far it has played. Remembered when a drawing begins, so that no picture has to be taken then. */
+  moment?(): { readonly turn: string | null; readonly playhead: number };
   /** starts a turn with these words and marks */
   prompt(words: string, marks: InkMarks): Promise<unknown>;
   announce(text: string): void;
@@ -100,6 +102,9 @@ const afterPaint = (): Promise<void> =>
     );
   });
 
+/** How long the pen has been up when the stage's picture is taken for a drawing waiting to be sent. */
+export const PICTURE_AFTER_MS = 700;
+
 export interface StageInkOptions {
   /** the palm guard the lens shares, so a pen seen by one is seen by both */
   readonly guard?: PalmGuard;
@@ -126,14 +131,18 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     ...(options.guard === undefined ? {} : { guard: options.guard }),
     space: { w: Math.max(1, stage.clientWidth), h: Math.max(1, stage.clientHeight) },
     on: { element: 'stage', label: 'the stage, as the user saw it' },
-    backdrop: async () => backdrop,
+    backdrop: async () => {
+      await pictureNow();
+      return backdrop;
+    },
     announce: app.announce,
   });
 
   const freeStrokes = (): number => ink.model.strokes.filter((stroke) => !owned(stroke.id)).length;
   const take = async (): Promise<InkMarks | null> => {
     if (freeStrokes() === 0) return null;
-    const turn = app.lastTurn();
+    // the turn the drawing began on, not the one the stage has come to since
+    const turn = began?.turn ?? app.lastTurn();
     ink.setOn({ element: 'stage', ...(turn === null ? {} : { node: turn }), label: 'the stage, as the user saw it' });
     // the blanks of the open asks are the boxes the writing is reported against, only for this one turn
     const boxes = app.answerBoxes?.() ?? [];
@@ -147,13 +156,24 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
   };
   let captures = 0;
   /**
-   * The picture the drawing is on, taken once the layer is up and the frame that opened it has been presented: off screen (the stage's own still path: a render target of its own,
+   * What the drawing began on, remembered for nothing: the turn on the stage and how far it had played. The stage's picture is not taken when the pen goes down (a render and a read-back
+   * of the stage, on the main thread, in the first stroke of a sum and of every drawing: fb-101); it is taken once the pen has been up for a while, or when the drawing is sent.
+   */
+  let began: { readonly turn: string | null; readonly playhead: number } | null = null;
+  const remember = (): void => {
+    if (began === null) began = app.moment?.() ?? { turn: app.lastTurn(), playhead: 0 };
+  };
+  /** the stage still shows what the drawing began on: a picture of it now is a picture of what the person saw (the turn may have played on) */
+  const sameStage = (): boolean => began !== null && (app.moment?.().turn ?? app.lastTurn()) === began.turn;
+  let taking: Promise<void> | null = null;
+  /**
+   * The picture the drawing is on, taken once the layer is up and the frame that showed it has been presented: off screen (the stage's own still path: a render target of its own,
    * read in the same task it is drawn in, never the visible canvas). One that fails, or comes back blank, is no backdrop at all: the picture that goes up is then the ink on white.
    */
-  const captureBackdrop = (): void => {
+  const captureBackdrop = (): Promise<void> => {
     captures += 1;
     const mine = captures;
-    void afterPaint()
+    const made: Promise<void> = afterPaint()
       .then(() => app.capture(1280))
       .then(async (url) => {
         const image = url === null ? null : await loadImage(url);
@@ -162,7 +182,37 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
       })
       .catch(() => {
         if (mine === captures) backdrop = null;
+      })
+      .then(() => {
+        if (taking === made) taking = null;
       });
+    taking = made;
+    return made;
+  };
+  /** the picture, now, for a drawing that is being sent: the one taken already, the one being taken, or one taken now (when the stage is still what the drawing began on) */
+  const pictureNow = async (): Promise<void> => {
+    if (backdrop === null && taking === null && freeStrokes() > 0 && sameStage()) void captureBackdrop();
+    await taking;
+  };
+  let idle: ReturnType<typeof setTimeout> | undefined;
+  /** the pointers that are on the layer now while Draw has it */
+  const touching = new Set<number>();
+  /** After the pen has been up for a moment, and only for what is to be sent (a stroke written in a cell is read from the cell, and goes up with no picture of the stage). */
+  const pictureLater = (): void => {
+    clearTimeout(idle);
+    if (backdrop !== null || taking !== null || freeStrokes() === 0) return;
+    idle = setTimeout(() => {
+      if (penHeld.size > 0 || touching.size > 0) return pictureLater();
+      if (backdrop === null && taking === null && freeStrokes() > 0 && sameStage()) void captureBackdrop();
+    }, PICTURE_AFTER_MS);
+  };
+  /** nothing is waiting to be sent: what was remembered and taken is let go */
+  const forget = (): void => {
+    clearTimeout(idle);
+    captures += 1;
+    backdrop = null;
+    began = null;
+    taking = null;
   };
   /** the pens that are down on the stage right now with no Draw: the layer must be there to take what they write */
   const penHeld = new Set<number>();
@@ -177,6 +227,7 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     if (throughOn) bar.element.hidden = !explicit && !ink.model.strokes.some((stroke) => !owned(stroke.id));
   };
   const penLeft = (event: PointerEvent): void => {
+    touching.delete(event.pointerId);
     if (!penHeld.delete(event.pointerId)) return;
     // after the layer's own handler has taken the stroke into the document
     setTimeout(refresh, 0);
@@ -192,10 +243,20 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     if (ink.model.strokes.length === 0) ink.setBackground(null, { w: Math.max(1, stage.clientWidth), h: Math.max(1, stage.clientHeight) });
     ink.refresh();
     ink.root.focus({ preventScroll: true });
-    captureBackdrop();
+    remember();
   };
+  // a pointer that goes down on the layer while Draw has it: the drawing has begun on what the stage shows now
+  layer.addEventListener(
+    'pointerdown',
+    (event) => {
+      touching.add(event.pointerId);
+      remember();
+    },
+    true,
+  );
   const sent = (): void => {
     ink.reset();
+    forget();
     set(false);
   };
 
@@ -215,6 +276,8 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
   const tell = (): void => {
     if (throughOn) refresh();
     const n = freeStrokes();
+    if (n === 0) forget();
+    else pictureLater();
     menu.badge(n === 0 ? null : String(n));
     toggle.set({ label: n === 0 ? 'Draw' : `Draw (${n} stroke${n === 1 ? '' : 's'} waiting)` });
   };
@@ -237,12 +300,10 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
       if (!throughOn || explicit) return;
       penHeld.add(event.pointerId);
       refresh();
-      if (ink.model.strokes.length === 0) {
-        // the stage as it is now is what the drawing is on: its space is the page, and its picture is taken now
-        ink.setBackground(null, { w: Math.max(1, stage.clientWidth), h: Math.max(1, stage.clientHeight) });
-        ink.refresh();
-        captureBackdrop();
-      }
+      // the stage as it is now is what the drawing is on: remembered (a turn and a playhead), not photographed; its picture comes after the pen has lifted, if the stroke is to be sent
+      remember();
+      // (`setBackground` lays the canvases out for the space it is given, once the layer is on screen)
+      if (ink.model.strokes.length === 0) ink.setBackground(null, { w: Math.max(1, stage.clientWidth), h: Math.max(1, stage.clientHeight) });
       ink.pointerDown(event);
     },
     abort(pointerId) {
@@ -255,6 +316,7 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     },
     setView: (view) => ink.setView(view),
     dispose() {
+      clearTimeout(idle);
       window.removeEventListener('pointerup', penLeft);
       window.removeEventListener('pointercancel', penLeft);
       bar.dispose();
