@@ -6,6 +6,8 @@ Most AI chats give you a column of text: you ask, it writes, you scroll. Conduit
 
 It runs on your own computer and uses the Claude or ChatGPT plan you already have. You don't need an API key or a new account.
 
+The idea behind it is in the essay [What does the user interface of the future look like?](https://lattris.com/by/b/memories/what-does-the-user-interface-of-the-future-look-like-8aff)
+
 ## Quick start
 
 You need [Git](https://git-scm.com), [Node](https://nodejs.org) 22.14 or a later 22.x version (see `.nvmrc`), and a web browser. It works on macOS and Linux.
