@@ -37,6 +37,9 @@
 //                      many lines, a dark ground, a photo with callouts); judged like a demo, each scene with its own question
 //   stream             a turn at 80 characters a second has its first element on stage long before its last line is sent; a recorded stream-json turn comes out line by line
 //   flows, photo       `pnpm flows` and `pnpm photo-check` (no model), run as groups
+//   showcase-reel      "What Conduit can do" as a film (showcase-reel.ts, no model): the table's reel and the plan come to 60-90 s and lose nothing unsaid; a 5 s piece of a section exports at 1920x1080, 30 fps
+//                      (over 50 KB, the tag in its frames); a caption stands through the turns of a page; the music page exports with sound; every page at rest on its section's own stage has no words cut by the
+//                      stage's edge or under its caption
 //
 // Every scene of every demo (split at its `scene` lines, each sought to its rest) is judged, not only the last. Beyond smoke's checks each gets the pixel judges of real-check.ts: ink in the box (a share of
 // it), the stage is what is at its centre and corners (not an overlay), and, for scenes with words on drawings, each line of words hidden in turn (footprints). Every scene is judged at rest by smoke's checks: answer on stage, no overlap, nothing cut off, readable chrome and prompt, no console errors,
@@ -55,6 +58,7 @@ import { spawnTracked } from '../brains/claude-cli/process';
 import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-browser';
 import { claimPort, releasePort } from './check-ports';
 import { filmGroup } from './film-check';
+import { showcaseReelGroup } from './showcase-reel';
 import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
 import { ASK_SCREEN, askGroup } from './ask-check';
@@ -1961,6 +1965,15 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     run: async (_servers, out) => {
       out.lines.push('\nfilm (the export as the session ran: typing, the panel, cuts, controls, following; a real WebM at 1280x720)');
       checkLines(out, await filmGroup(plain));
+    },
+  });
+  units.push({
+    name: 'showcase-reel',
+    needs: 'none',
+    weight: 90,
+    run: async (_servers, out) => {
+      out.lines.push('\nshowcase-reel (the capability reel: the plan, a 5 s piece at 1920x1080, a caption through a tap, the music with sound, every page at rest on its section\'s stage)');
+      checkLines(out, await showcaseReelGroup(plain, join(args.out, 'showcase-reel')));
     },
   });
   units.push({

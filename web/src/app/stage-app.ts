@@ -2,7 +2,7 @@ import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, p
 import overtureScript from '@conduit/language/demos/overture.series?raw';
 import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, InkMarks, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TourAction, TurnEndReason, TurnInput, TurnSource } from '@conduit/language';
 import type { AppAct, AppHost } from '../contracts/app';
-import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
+import type { ExportJob, ExportRequest, Exporter, FilmTurn } from '../contracts/export';
 import type { ChartHost } from '../contracts/chart';
 import type { StageHook } from '../contracts/hook';
 import { createDocumentView } from './document-view';
@@ -1981,11 +1981,13 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     const filmOptions = { apps: true, reducedMotion: snap.reducedMotion, arrival: 'at-once' as const, ...(request.kind === 'video' ? {} : { controls: held }), data: Object.fromEntries(dataTables) };
     let film: Film;
     let reelNote: string | null = null;
+    let reelTurns: readonly FilmTurn[] | null = null;
     if (request.kind === 'video') {
       // A film is the session as it ran: the language pane beside the stage and the input box along the bottom (each unless the request leaves it out), the stage laid out in the room they leave.
       const made = videoFilm(request, { recording, recordings: painter.recordings(), log: lang, options: filmOptions, maxSeconds: REEL_MAX_SECONDS });
       film = made.film;
       reelNote = made.note;
+      reelTurns = made.turns;
     } else film = createFilm(recording, { ...filmOptions, viewport: request.kind === 'script' ? snap.viewport : { width: request.width, height: request.height, dpr: 1 } });
     // A film is not touched by a second job: the exporter refuses it, and the one still running keeps the status line.
     const refused = exporting !== null && request.kind !== 'script' && !(request.kind === 'still' && request.format === 'svg');
@@ -2013,7 +2015,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         ),
     );
     publishStatus();
-    return reelNote === null ? job : { ...job, done: job.done.then((made) => ({ ...made, note: reelNote })) };
+    return reelNote === null && reelTurns === null ? job : { ...job, done: job.done.then((made) => ({ ...made, ...(reelNote === null ? {} : { note: reelNote }), ...(reelTurns === null ? {} : { turns: reelTurns }) })) };
   }
 
   /** how each turn was opened, so the answer kept for a reload can say what it answered */
