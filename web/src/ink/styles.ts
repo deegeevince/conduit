@@ -35,6 +35,7 @@ export const INK_CSS = `
 .ink-bar__status:empty{display:none}
 .ink-stage{position:absolute;inset:0;z-index:30}
 .ink-stage[hidden]{display:none}
+.ink-stage-host--draw{touch-action:none!important}
 .ink-stage--through,.ink-stage--through .ink{pointer-events:none}
 .ink-stage--through .ink-stage__bar{pointer-events:auto}
 .ink-bar[hidden]{display:none}
