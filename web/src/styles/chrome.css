@@ -1006,6 +1006,44 @@ input {
   -webkit-user-select: none;
 }
 
+/* fb-055: words a tap asks about (a label the brain drew, `say callout near=x`, a figure part's label). A quiet dotted underline in the look's own dim ink says they can be
+   tapped; the pointer over them lights it in the look's accent (`data-lit`, set from the pointer events so that a scripted pointer shows it too), a press tints the words'
+   place. The underline is under the twin of the drawn words, which stands exactly where they are. The hit area grows round them to a fingertip's room; nothing is drawn there. */
+.stage__text-block--ask .stage__text-line {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  border-bottom: 1.5px dotted color-mix(in srgb, var(--stage-dim, #6f685c) 70%, transparent);
+  border-radius: 1px;
+}
+
+.stage__text-block--ask .stage__text-line::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  right: -10px;
+  top: 50%;
+  height: 100%;
+  min-height: 28px;
+  transform: translateY(-50%);
+}
+
+@media (pointer: coarse) {
+  .stage__text-block--ask .stage__text-line::before {
+    min-height: 44px;
+  }
+}
+
+.stage__text-block--ask[data-lit] .stage__text-line {
+  border-bottom: 2px solid var(--stage-accent, #c13e1e);
+  background: color-mix(in srgb, var(--stage-accent, #c13e1e) 9%, transparent);
+}
+
+.stage__text-block--ask[data-lit='press'] .stage__text-line {
+  background: color-mix(in srgb, var(--stage-accent, #c13e1e) 22%, transparent);
+}
+
 .stage__text-line::selection {
   color: transparent;
   background: color-mix(in srgb, var(--stage-accent, #3b82f6) 38%, transparent);

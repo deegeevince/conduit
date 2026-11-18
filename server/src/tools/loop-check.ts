@@ -178,13 +178,14 @@ export async function loopProblems(): Promise<string[]> {
 const LAPTOP = { screen: { width: 1344, height: 866, dpr: 2, reducedMotion: false, pointer: 'fine' }, capabilities: { looks: [], engine: ENGINE_VERSION }, tables: [], held: {} } as unknown as MeasureSession;
 
 /**
- * A lesson in column addition on a free layout, in the shape of the one that went wrong (the words and sums are made up): a title with no `at=`
- * (the stage places it), a worked sum and its steps pinned to points, a line of words in ink too pale to read, and a line to close on. The stage
- * puts the title where the steps are, and the steps are the words it runs into.
+ * A lesson in column addition on a free layout, in the shape of the one that went wrong (the words and sums are made up): a title told the middle of the stage
+ * (`at=center`), a worked sum and its steps pinned to points, a line of words in ink too pale to read, and a line to close on. A title with no `at=` goes to the
+ * top of a free scene now (fb-059), and one pinned to a point is made room round, but a title told an anchor keeps it: it stands where the steps are, and the
+ * steps are the words it runs into.
  */
 const TITLE_OVER_STEPS = [
   'scene layout=free canvas=square',
-  'say t1 title | Adding big numbers',
+  'say t1 title at=center | Adding big numbers',
   'say k1 aside at=8,14 | Carries',
   'say k2 aside at=40,14 align=right face=mono | 1 1 1',
   'say r1 at=40,24 align=right face=mono | 3719',

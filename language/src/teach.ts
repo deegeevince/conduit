@@ -102,7 +102,7 @@ export function askChapter(withDocument: boolean): string {
     'ASK ON THE STAGE (for the person to work out or choose, set in the picture and checked on their press; never an app): an `ask` with no `part` open, then its `hint`s.',
     withDocument ? '' : 'FORMS: `ask <id> is=<a>,<b> | words with one __ where the answer goes` (typed); `… pick=<x>,<y> | …` (large choices); `ask <id> check=any pick=<x>,<y> | …` (their own choice); `send=yes|no`; `hint | words` (behind a tap).',
     '- Asks open in order, each when the one before is right or given up: write the whole breakdown at once, after a `scene stack` and the words that set the question.',
-    '- The key is `is=` (every accepted spelling) and nowhere else: not in a `say`, a hint, a title or another ask\'s words. A line that shows it is refused.',
+    '- The key is `is=`: the one answer in each spelling (digits, words; `6,281` and `6 281` are matched for you), never a step of the working, and nowhere else: not in a `say`, a hint, a title or another ask\'s words. A line that shows it is refused.',
     '- A hint asks back or says what to try, never the step that gives the answer.',
     '- You hear of their tries on your next turn, and at once when the last ask is done (`send=no` waits, `send=yes` tells you now).',
     '- An answer they give by pen marks, voice or chat goes in with `fill <ask id> | <answer>` (the page shows and checks it): that is the only way a blank gets filled, so never say you filled one otherwise.',

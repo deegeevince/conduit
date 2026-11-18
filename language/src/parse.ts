@@ -1,7 +1,7 @@
 import { STANDING_LIMITS } from './context';
 import { parsePathData } from './geometry';
 import type { StageSlot } from './lesson';
-import { isLessonId, isLessonVerb, isSpan, readCrop, readShow, splitValues, tagWord } from './lesson';
+import { answerValues, isLessonId, isLessonVerb, isSpan, readCrop, readShow, splitValues, tagWord } from './lesson';
 import type { LessonLine } from './lesson';
 import { BUILTIN_STYLE_NAMES, own } from './style';
 import { readSum, splitMathPart } from './maths/sum';
@@ -1947,10 +1947,12 @@ function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine |
   let id = '-';
   head.words.forEach((word, index) => {
     if (index === 0 && isLessonId(word)) id = word;
+    // a word that is a number or a digit list is the rest of an answer the brain spaced out (`is=6281, 6,281`): it says so, as a list has no spaces
+    else if (/^["“”]?[£$€]?\d[\d,._/]*["“”]?$/.test(word)) issues.warn('unknown-word', `"${word}" follows the answers but is not in them (is= has no spaces: a comma between answers, a _ for a space inside one, a thousands comma stays in its number); ignored`, word);
     else issues.warn('unknown-word', `"${word}" means nothing here; ignored`, word);
   });
   let parent: string | undefined;
-  let accepted: string[] = [];
+  let acceptedRaw: string | undefined;
   let pick: string[] | undefined;
   let unit: string | undefined;
   let check: 'working' | 'order' | 'any' | 'done' | undefined;
@@ -1972,7 +1974,7 @@ function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine |
     } else if (pair.key === 'check') {
       if (pair.value === 'working' || pair.value === 'order' || pair.value === 'any' || pair.value === 'done') check = pair.value;
       else issues.warn('bad-value', `check= is working, order, any or done; "${pair.value}" ignored`, pair.token);
-    } else if (pair.key === 'is' || pair.key === 'answer') accepted = splitValues(pair.raw).filter((value) => value.length <= LESSON_LIMITS.answer);
+    } else if (pair.key === 'is' || pair.key === 'answer') acceptedRaw = pair.raw;
     else if (pair.key === 'pick' || pair.key === 'choices') pick = splitValues(pair.raw).filter((value) => value.length <= LESSON_LIMITS.answer).slice(0, LESSON_LIMITS.pick);
     else if (pair.key === 'unit') {
       if (/^[a-z£$€%]{1,16}$/.test(pair.value)) unit = pair.value;
@@ -1980,6 +1982,8 @@ function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine |
     } else rest.push(pair);
   }
   warnUnknownPairs(rest, issues);
+  // fb-061. The answers are the ways of writing one answer; a thousands comma (`6,281`) is part of a number, not a list
+  const accepted = acceptedRaw === undefined ? [] : answerValues(acceptedRaw, check === 'order').filter((value) => value.length <= LESSON_LIMITS.answer);
   if (accepted.length === 0 && check !== 'any' && check !== 'done') {
     issues.error('missing-argument', 'ask needs the answers it accepts: ask a1 in=q1a is=34 | Where did you land?');
     return null;
