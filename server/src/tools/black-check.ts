@@ -10,6 +10,7 @@
 //   draw      Draw is opened from the [+] menu with a finger: the layer is over the stage and the screen's centre and corners are still not black; the layer's own canvases are
 //             fully transparent (an empty drawing has no colour of its own); a finger's stroke is written and shows
 //   picture   the picture the brain would be sent is lit (the stage's picture under the ink, or the ink on white): a stage picture that came back black is never used
+//   send      (Chrome, as the device does) Send drawing before any real turn starts a turn with the marks, and no request fails
 //
 // Each run twice: as the device does, and with the failure modelled on it (`FORCED`), because a desktop GPU never shows what a phone's does:
 //   - a canvas that asked for the low-latency path (`desynchronized`) is painted opaque black, as a phone's compositor may hand a layer that lies over the whole stage to the display
@@ -260,6 +261,20 @@ export async function blackGroup(base: string, screen: LensScreen, dir: string, 
         const lum = await tab.eval<number>(PICTURE_LUM(url));
         facts.push(`the picture sent has luminance ${lum.toFixed(0)}`);
         if (lum < ground * 0.6) problems.push(`${pass.name} picture: the picture that would be sent with the drawing is dark (luminance ${lum.toFixed(0)}, the ground ${ground.toFixed(0)}): a stage picture that came back black was used`);
+      }
+      // 6. Send drawing, before any real turn: the server takes the drawing for the turn it follows (the welcome's local turn is the one it is "on")
+      if (!pass.forced) {
+        const sentBefore = tab.posted.length;
+        if (!(await tapAt('.ink-stage .ink-btn--send'))) problems.push(`${pass.name} send: the layer has no Send drawing button`);
+        else {
+          const waitUntil = Date.now() + 10_000;
+          while (tab.posted.length === sentBefore && Date.now() < waitUntil) await sleep(100);
+          const sent = tab.posted[sentBefore];
+          if (sent === undefined) problems.push(`${pass.name} send: Send drawing started no turn`);
+          else if (!/"marks"/.test(sent.body)) problems.push(`${pass.name} send: the turn Send drawing started carries no marks`);
+          else facts.push('Send drawing started a turn with the marks');
+          await sleep(1500);
+        }
       }
       const logged = tab.drain();
       const bad = logged.failedRequests.filter((entry) => !/\/snapshot/.test(entry.text));
