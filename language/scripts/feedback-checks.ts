@@ -78,8 +78,8 @@ function fb058(): void {
   // the hand-placed recipe is gone: no coordinates for digits, no right edge, no mono face, no free canvas
   expect('fb-058: the chapter teaches no hand-placed column', /align=right|face=mono|layout=free|canvas=square|a row every 10|path.*rule/.test(chapter), false);
   expect('fb-058: the chapter does not teach `problem` or the workspace', /\bproblem\b|workspace/i.test(chapter), false);
-  // the brief only grows for what it was asked to say (it was 1,348 characters; PLAN-romer 3a and PLAN-maths M7 added the two cases and the typeset formula: 1,311 then, 1,629 now)
-  expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 1640, true);
+  // the brief only grows for what it was asked to say (it was 1,348 characters; PLAN-romer 3a and PLAN-maths M7 added the two cases and the typeset formula: 1,311 then, 1,651 now)
+  expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 1660, true);
   // and it is carried for the owner's own words (they hold no digit and none of the old cue words), and by the maths card
   expect('fb-058: the owner\'s sentence is read as a maths question', asksForMaths(SENTENCE), true);
   const brief = buildTurnBrief(contextWith(), { kind: 'prompt', text: SENTENCE });

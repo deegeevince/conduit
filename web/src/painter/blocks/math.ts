@@ -260,7 +260,7 @@ export function layoutMath(input: StructureInput): StructureLayout {
 /** The sizes a display formula is set at, largest first: the headline of the look, as the digits of a sum are, then smaller while it is wider than the room. */
 const FORMULA_SIZES: readonly Size[] = ['xl', 'l', 'm'];
 /** How far it is shrunk after that, last, before the block says it is crowded. */
-const FORMULA_SHRINKS: readonly number[] = [1, 0.88, 0.76, 0.66];
+const FORMULA_SHRINKS: readonly number[] = [1, 0.88, 0.76, 0.66, 0.56, 0.48];
 /** Round its ink, in ems, so that a glyph that reaches past the box KaTeX gives (an italic's overhang, a radical's tail) is still drawn. */
 export const FORMULA_PAD = 0.12;
 
@@ -280,13 +280,13 @@ function layoutFormula(input: StructureInput, math: MathFigure): StructureLayout
     return { boxes: new Map([[key, whole]]), parts: [plain(key, 'source', math.sum, whole, { ...at, face: 'mono' })], routes: new Map(), notes: [], shrink: 1 };
   }
   let chosen: { readonly em: number; readonly shrink: number } | null = null;
-  search: for (const size of FORMULA_SIZES) {
+  search: for (const [at, size] of FORMULA_SIZES.entries()) {
     const em = emOf(input, size);
     for (const shrink of FORMULA_SHRINKS) {
       chosen = { em: em * shrink, shrink };
       if (facts.width * em * shrink <= room.width + 0.5 && facts.height * em * shrink <= room.height + 0.5) break search;
-      // wider than the room at this size: the size below, not a squeeze, unless it is the last
-      if (shrink === 1) continue search;
+      // wider or taller than the room at this size: the size below, not a squeeze; the smallest size is the one that is squeezed, a little at a time
+      if (shrink === 1 && at < FORMULA_SIZES.length - 1) continue search;
     }
   }
   if (chosen === null) return EMPTY_STRUCTURE_LAYOUT;

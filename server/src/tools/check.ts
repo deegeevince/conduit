@@ -961,6 +961,28 @@ class Screen {
         good = `f1 and f2 are set by KaTeX (${boxes.map((b) => `${Math.round(b.w)}x${Math.round(b.h)}`).join(' and ')}), inked, f2's fraction bar is drawn, both have MathML with their TeX in the text layer, and KaTeX came as its own chunk with its fonts`;
         break;
       }
+      case 'formula-wide': {
+        // a formula wider than its room is set smaller and whole: its box is inside the screen, nothing is said to be crowded or cut, and it is inked from end to end
+        interface Typeset { readonly id: string; readonly box: { x: number; y: number; width: number; height: number }; readonly set: boolean; readonly fault: string | null }
+        const f = (await tab.eval<Typeset[]>('window.__stage.formulas()')).find((candidate) => candidate.id === 'f4');
+        const view = await tab.eval<{ w: number }>('({ w: innerWidth })');
+        if (f === undefined) problems.push('the formula f4 is not on stage');
+        else {
+          if (!f.set || f.fault !== null) problems.push(`f4 was not set by KaTeX (${f.fault ?? 'the estimate'})`);
+          if (f.box.x < -1 || f.box.x + f.box.width > view.w + 1) problems.push(`f4 stands ${f.box.x < 0 ? 'off the left' : 'off the right'} of the screen: ${Math.round(f.box.x)}..${Math.round(f.box.x + f.box.width)} of ${view.w}`);
+          const picture = await tab.shot();
+          const halves = [0, 1].map((half) => ({ x: f.box.x + (f.box.width / 2) * half, y: f.box.y, w: f.box.width / 2, h: f.box.height }));
+          const marks = await tab.call<{ px: number; share: number }[]>('inkIn', picture, halves, tab.dpr);
+          marks.forEach((mark, at) => {
+            if (mark.share < 0.02) problems.push(`the ${at === 0 ? 'left' : 'right'} half of f4 holds no ink (${(mark.share * 100).toFixed(1)}%): it is cut`);
+          });
+          const sight = await tab.eval<{ id: string; notes: string[] }[]>(`Promise.resolve(window.__stage.sight()).then((s) => s.items.filter((i) => i.id === 'f4').map((i) => ({ id: i.id, notes: i.notes })))`);
+          const blocked = sight[0]?.notes.filter((note) => note === 'crowded' || note === 'clipped') ?? [];
+          if (blocked.length > 0) problems.push(`the page says f4 is ${blocked.join(' and ')}`);
+        }
+        good = 'f4, about thirty ems wide, is set smaller to stand whole in its room: inside the screen, inked in both halves, and the page does not say it is crowded or cut';
+        break;
+      }
       case 'formula-error': {
         // a formula KaTeX cannot read is its source, set as text: the page says so (a fault, never a blank), the text layer reads the source, and the box has ink
         interface Typeset { readonly id: string; readonly box: { x: number; y: number; width: number; height: number }; readonly set: boolean; readonly fault: string | null }
