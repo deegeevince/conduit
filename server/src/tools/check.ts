@@ -1241,6 +1241,21 @@ class Screen {
       if (!(high.shadow.width < low.shadow.width - 20)) problems.push(`a higher sun must throw a shorter shadow: ${Math.round(low.shadow.width)} px at 20, ${Math.round(high.shadow.width)} px at 80`);
       if (!(low.shadow.x + low.shadow.width / 2 > low.sun.x + low.sun.width / 2)) problems.push('the shadow must fall away from the sun, and it falls on the same side');
     }
+    // the shadow all the way along the slider (it is bound over four parts of the range, chained): it only ever shortens as the sun goes up, and at 45 degrees it is the length the sentence says
+    // (2 m against 5.5 m at 20 degrees: a ratio of 0.36)
+    const along = [20, 26, 32, 38, 45, 50, 56, 62, 68, 74, 80];
+    const lengths: number[] = [];
+    for (const angle of along) {
+      await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, ${angle})`);
+      await settled();
+      lengths.push((await sun()).shadow?.width ?? 0);
+    }
+    const grew = lengths.findIndex((length, at) => at > 0 && length > (lengths[at - 1] as number) + 4);
+    if (grew > 0) problems.push(`the shadow grew again as the sun went up: ${along.map((angle, at) => `${angle} ${Math.round(lengths[at] as number)}`).join(', ')}`);
+    const ratio = (lengths[4] as number) / Math.max(1, lengths[0] as number);
+    if (ratio < 0.3 || ratio > 0.43) problems.push(`the shadow at 45 degrees is ${ratio.toFixed(2)} of its length at 20; a 2 m post throws 2 m against 5.5 m (0.36)`);
+    await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, 80)`);
+    await settled();
     if (!/Sun 20\D*\bup\b/.test(low.said) || !/Sun 80\D*\bup\b/.test(high.said)) problems.push(`the live sentence does not say the angle: "${low.said}" at 20 and "${high.said}" at 80`);
     if (afterSlider === start) problems.push(`moving the slider "${slider.label}" changed nothing in the drawing`);
     const afterToggle = afterSlider;

@@ -905,7 +905,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
           tourBar.show(tourTryFor(tourWants), false);
           tourWants = null;
         } else if (!tourHold) tourBar.hide();
-        refreshViewport();
+        // (only while the bar is up: with no bar nothing here changes the stage's room, and an ordinary turn lays out as it always did)
+        if (tourBar.visible()) refreshViewport();
         if (mutingNext) {
           mutingNext = false;
           mutedTurns.add(event.turn);
@@ -1061,7 +1062,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
           if (tourHold) pendingUndo = true;
           else {
             undoChip.show(tourBar.visible() ? tourBar.row : null);
-            refreshViewport();
+            if (tourBar.visible()) refreshViewport();
           }
         }
         drawnTurns.delete(event.turn);
