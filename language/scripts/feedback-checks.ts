@@ -1,6 +1,8 @@
 // Checks of the owner's feedback that the language settles (docs/feedback.md), each named by its row. Run by `pnpm timeline`.
 //
 //   fb-058  the brain is taught the `math` line for a column sum (no digits placed by hand), it is carried when the words are the owner's, and it never holds the answer
+//   ro-3a   (PLAN-romer 3a) "show me the maths" is a request to SEE a calculation, not to be coached through one: the chapter the words carry opens by saying which case is which,
+//           and coaches only the learner who will do the working; the formula line it teaches reads
 //   fb-061  an `ask` accepts the ways of writing ONE answer: a thousands comma or space is part of a number; a step of the working that was listed with the answer is
 //           dropped with a reason; a hint is refused only when it shows what the ask really accepts
 //
@@ -76,8 +78,8 @@ function fb058(): void {
   // the hand-placed recipe is gone: no coordinates for digits, no right edge, no mono face, no free canvas
   expect('fb-058: the chapter teaches no hand-placed column', /align=right|face=mono|layout=free|canvas=square|a row every 10|path.*rule/.test(chapter), false);
   expect('fb-058: the chapter does not teach `problem` or the workspace', /\bproblem\b|workspace/i.test(chapter), false);
-  // the brief only shrinks (it was 1,348 characters)
-  expect(`fb-058: the maths chapter is no longer than it was (is ${chapter.length})`, chapter.length <= 1348, true);
+  // the brief only grows for what it was asked to say (it was 1,348 characters; PLAN-romer 3a and PLAN-maths M7 added the two cases and the typeset formula: 1,311 then, 1,629 now)
+  expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 1640, true);
   // and it is carried for the owner's own words (they hold no digit and none of the old cue words), and by the maths card
   expect('fb-058: the owner\'s sentence is read as a maths question', asksForMaths(SENTENCE), true);
   const brief = buildTurnBrief(contextWith(), { kind: 'prompt', text: SENTENCE });
@@ -101,6 +103,34 @@ function fb058(): void {
   expect('fb-058: a say that states the sealed answer is refused', sealed.refused.some((issue) => issue.startsWith('spoiler')), true);
   const quiet = played(['scene stack', 'math w1 column worked | 4768 + 2557', 'say | Your turn: add them the same way.', 'math m1 column | 3486 + 2795', 'ask q1 is=7043 stage=1 | 5079 + 1964 = __']);
   expect('fb-058: a worked example, her own sum and an ask play with nothing refused', [quiet.refused, quiet.said], [[], []]);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// ro-3a: who does the working. The brain is told the two cases by who is to do the working; the page cannot tell them from the words, so the check holds what the brain is
+// told, and the live smoke (a Rømer sentence) holds what it does.
+
+const SEE = "Show me the maths behind Rømer's speed of light, his numbers in. Let me change the delay.";
+const COACH = 'show me how to add two big numbers and ask me questions';
+
+function ro3a(): void {
+  const chapter = MATHS_CHAPTER;
+  const opening = chapter.split('\n')[0] ?? '';
+  const [learner = '', see = ''] = opening.split(/The person asks to SEE/);
+  expect('ro-3a: the opening is about who does the working, and names both cases', [/WHO DOES THE WORKING/.test(opening), /The learner will/.test(learner), see !== ''], [true, true, true]);
+  // what coaches (blanks, an `ask`, a hint, no answer) belongs to the learner's case; the person who asks to see is told to show it whole
+  expect('ro-3a: the learner is coached with blanks, an ask and a hint', [/each result blank/.test(learner), /one `ask`/.test(learner), /hint/.test(learner)], [true, true, true]);
+  expect('ro-3a: a calculation the person asks to see is shown whole: every step and result, no ask, no blank cell', [/show it whole/.test(see), /every step and result/.test(see), /no `ask`/.test(see), /no blank cell/.test(see)], [true, true, true, true]);
+  expect('ro-3a: nothing that coaches is said of the person who asks to see', [/each result blank/.test(see), /is=/.test(see), /hint/.test(see), /coach/.test(see)], [false, false, false, false]);
+  // both sets of words carry the chapter, and both are told the same two cases first: the brief says which case is which, the brain reads who it is talking to
+  for (const text of [SEE, COACH]) {
+    const brief = buildTurnBrief(contextWith(), { kind: 'prompt', text });
+    expect(`ro-3a: "${text.slice(0, 40)}…" carries the chapter, its two cases first`, [asksForMaths(text), brief.includes(opening), brief.indexOf(opening) < brief.indexOf('A column sum, take-away or times as on paper is ONE line')], [true, true, true]);
+  }
+  // a calculation shown whole is a typeset formula, symbols and then the numbers in; the line the chapter teaches reads as written
+  const teaches = /`(math f2 formula \| [^`]+)`/.exec(chapter)?.[1] ?? '';
+  const read = parseLine(teaches);
+  expect('ro-3a: the chapter teaches a formula with its numbers put in, and it reads', [teaches.includes('\\frac{3.0\\times10^{8}'), read.kind === 'line' && read.line.verb === 'math' && read.line.method === 'formula' && read.line.sum.includes('\\approx')], [true, true]);
+  expect('ro-3a: a shown-whole formula says nothing to be sealed or worked out', played(['scene stack', 'math f1 formula | c = \\frac{d}{\\Delta t}', teaches, 'say | About 227,000 km/s.']), { lines: ['scene', 'math', 'math', 'say'], refused: [], said: [] });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -168,6 +198,7 @@ function fb061(): void {
 /** Run by `pnpm timeline`. */
 export function feedbackChecks(): boolean {
   fb058();
+  ro3a();
   fb061();
   process.stdout.write(`\nfeedback checks: ${passed} held${ok ? '' : ', some failed'}\n`);
   return ok;
