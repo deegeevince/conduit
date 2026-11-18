@@ -1,6 +1,8 @@
 // Checks of the owner's feedback that the language settles (docs/feedback.md), each named by its row. Run by `pnpm timeline`.
 //
 //   fb-058  the brain is taught the `math` line for a column sum (no digits placed by hand), it is carried when the words are the owner's, and it never holds the answer
+//   fb-090  a photographed question is shown first with a callout on each number it gives, then worked as a `math` line; a finished sum comes back as an act the brain is
+//           taught to answer with one next question (the chapter, carried with a photo for the owner's words)
 //   fb-008  a markdown bullet or numbered item that is no Series ("- **Mercury** …", "* x", "1. First") is said as text, marker and emphasis off, with a warning that says so, not refused
 //   ro-3a   (PLAN-romer 3a) "show me the maths" is a request to SEE a calculation, not to be coached through one: the chapter the words carry opens by saying which case is which,
 //           and coaches only the learner who will do the working; the formula line it teaches reads
@@ -77,11 +79,11 @@ function fb058(): void {
   expect('fb-058: the chapter teaches the math line', [chapter.includes('`math m1 column|times|split|bond'), chapter.includes('[worked]'), chapter.includes('blank=all')], [true, true, true]);
   expect('fb-058: the chapter says the painter computes the digits and the brain writes none', [/never digits you place/.test(chapter), /painter computes every digit/.test(chapter), /seals the answer/.test(chapter)], [true, true, true]);
   expect('fb-058: the chapter names the parts and where they work', [chapter.includes('m1.carry-tens'), chapter.includes('near='), chapter.includes('`hit`'), chapter.includes('mark=box'), chapter.includes('`fill m1 |')], [true, true, true, true, true]);
-  // the hand-placed recipe is gone: no coordinates for digits, no right edge, no mono face, no free canvas
-  expect('fb-058: the chapter teaches no hand-placed column', /align=right|face=mono|layout=free|canvas=square|a row every 10|path.*rule/.test(chapter), false);
+  // the hand-placed recipe is gone: no coordinates for digits, no right edge, no mono face, no free layout (a figure scene on a square canvas is the photo's, fb-090)
+  expect('fb-058: the chapter teaches no hand-placed column', /align=right|face=mono|layout=free|a row every 10|path.*rule/.test(chapter), false);
   expect('fb-058: the chapter does not teach `problem` or the workspace', /\bproblem\b|workspace/i.test(chapter), false);
-  // the brief only grows for what it was asked to say (it was 1,348 characters; PLAN-romer 3a and PLAN-maths M7 added the two cases and the typeset formula: 1,311 then, 1,654 now)
-  expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 1660, true);
+  // the brief only grows for what it was asked to say (it was 1,348 characters; PLAN-romer 3a and PLAN-maths M7 added the two cases and the typeset formula, 1,654; fb-090 added the photo, the room the working needs and the finished act)
+  expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 2240, true);
   // and it is carried for the owner's own words (they hold no digit and none of the old cue words), and by the maths card
   expect('fb-058: the owner\'s sentence is read as a maths question', asksForMaths(SENTENCE), true);
   const brief = buildTurnBrief(contextWith(), { kind: 'prompt', text: SENTENCE });
@@ -108,6 +110,21 @@ function fb058(): void {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
+// fb-090: a photographed question is shown with a callout on each number, then worked; a finished sum comes back as an act and is answered
+
+function fb090(): void {
+  const chapter = MATHS_CHAPTER;
+  expect('fb-090: the chapter teaches the photo first, a callout on each number it gives, then the working', [chapter.includes('canvas=square'), chapter.includes('`pic p1 from=u1`'), chapter.includes('callout at=x,y in=p1'), chapter.includes('`wait 3`'), chapter.includes('`scene stack` for the working')], [true, true, true, true, true]);
+  expect('fb-090: the chapter says a finished block is an act, answered with one next question and not the working again', [chapter.includes('m1: all right, after 1 wrong check'), /ONE next small question/.test(chapter), /never the working again/.test(chapter)], [true, true, true]);
+  expect('fb-090: the chapter keeps the words above the working to a title and three short lines, and gives a new sum a new id', [/title and three short lines at most/.test(chapter), chapter.includes('a new sum is a new id')], [true, true]);
+  const card: TechniqueCard = { id: 'seed:teach-young-learner', title: 'A maths question to work out', when: 'a child needs help with a maths question', example: ['scene stack', 'say title | Flowers', 'ask a1 is=12 | How many flowers? __'] };
+  const brief = buildTurnBrief({ ...contextWith([card]), photos: { u1: 0.8 } }, { kind: 'prompt', text: "Help me work this out, don't tell me the answer", images: ['u1'] });
+  expect('fb-090: the brief for a photographed question carries the photo lesson and the photo\'s own frame', [brief.includes('A PHOTO of the question'), brief.includes('`say callout at=52,18 in=<pic id>')], [true, true]);
+  const taught = played(['scene layout=figure canvas=square', 'pic p1 from=u1 aspect=0.8', 'say c1 callout at=43,32 in=p1 | 503 apples at the start', 'say c2 callout at=16,38 in=p1 | 278 sold', 'wait 3', 'scene stack', 'say title | 503 apples, 278 sold', 'math m1 column | 503 - 278']);
+  expect('fb-090: what the chapter teaches plays with nothing refused or said', [taught.refused, taught.said], [[], []]);
+  expect('fb-090: ...and it is the photo, the callouts, then the working', taught.lines, ['scene', 'pic', 'say', 'say', 'wait', 'scene', 'say', 'math']);
+}
+
 // ro-3a: who does the working. The brain is told the two cases by who is to do the working; the page cannot tell them from the words, so the check holds what the brain is
 // told, and the live smoke (a Rømer sentence) holds what it does.
 
@@ -244,6 +261,7 @@ function fb008(): void {
 /** Run by `pnpm timeline`. */
 export function feedbackChecks(): boolean {
   fb058();
+  fb090();
   fb008();
   ro3a();
   fb061();

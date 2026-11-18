@@ -1652,6 +1652,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         mathDowns.set(event.pointerId, at);
         // the browser's own mouse events after a touch would move the focus to the canvas, away from the cell the tap puts the keyboard in
         event.preventDefault();
+        // fb-093. A finger on a box, Check, Hint or a cross works the written method and is nothing else: it is not also a tap "at" the block the brain is told of
+        // (a Pencil's tap already was not: `penPress`)
+        return;
       }
     }
     if (event.pointerType === 'pen') {
