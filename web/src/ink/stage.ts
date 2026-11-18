@@ -67,6 +67,39 @@ function loadImage(url: string): Promise<HTMLImageElement | null> {
   });
 }
 
+/**
+ * Whether a picture of the stage came back as nothing: every sampled pixel is black. A graphics stack that cannot hand the stage's pixels over (a phone's, under memory
+ * pressure) gives a cleared buffer, and a picture of that must never go to the brain as "the stage as the user saw it", or sit under the ink as a black card.
+ */
+export function isBlankPicture(image: CanvasImageSource & { readonly naturalWidth?: number }): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (context === null) return false;
+    context.drawImage(image, 0, 0, 32, 32);
+    const data = context.getImageData(0, 0, 32, 32).data;
+    for (let i = 0; i < data.length; i += 4) if ((data[i] as number) > 6 || (data[i + 1] as number) > 6 || (data[i + 2] as number) > 6) return false;
+    return true;
+  } catch {
+    // a picture that cannot be read back is judged by whoever sends it
+    return false;
+  }
+}
+
+/** After the layer has been painted once (two frames, or the time they would take when the page is not being shown): the stage's picture is not asked for in the frame that opens the layer. */
+const afterPaint = (): Promise<void> =>
+  new Promise((resolve) => {
+    const give = setTimeout(resolve, 300);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        clearTimeout(give);
+        resolve();
+      }),
+    );
+  });
+
 export interface StageInkOptions {
   /** the palm guard the lens shares, so a pen seen by one is seen by both */
   readonly guard?: PalmGuard;
@@ -112,18 +145,44 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
       ink.setRegions([]);
     }
   };
+  let captures = 0;
+  /**
+   * The picture the drawing is on, taken once the layer is up and the frame that opened it has been presented: off screen (the stage's own still path: a render target of its own,
+   * read in the same task it is drawn in, never the visible canvas). One that fails, or comes back blank, is no backdrop at all: the picture that goes up is then the ink on white.
+   */
   const captureBackdrop = (): void => {
-    void app.capture(1280).then(async (url) => {
-      const image = url === null ? null : await loadImage(url);
-      backdrop = image === null ? null : { kind: 'image', image };
-    });
+    captures += 1;
+    const mine = captures;
+    void afterPaint()
+      .then(() => app.capture(1280))
+      .then(async (url) => {
+        const image = url === null ? null : await loadImage(url);
+        if (mine !== captures) return;
+        backdrop = image === null || isBlankPicture(image) ? null : { kind: 'image', image };
+      })
+      .catch(() => {
+        if (mine === captures) backdrop = null;
+      });
   };
-  /** the layer is shown when Draw has it, or when the lens lets the pen through it; the bar shows with Draw, or once a pen stroke waits */
+  /** the pens that are down on the stage right now with no Draw: the layer must be there to take what they write */
+  const penHeld = new Set<number>();
+  /**
+   * The layer is over the stage while Draw has it, or while there is ink to show (strokes the pen wrote with no Draw, a method's cells), or while a pen stroke is being begun. An idle layer
+   * is not on screen at all: it would be a stage-sized transparent plane (two canvases of the stage's size in pixels) that does nothing, on a phone that has no pen.
+   */
   const refresh = (): void => {
-    layer.hidden = !(explicit || throughOn);
+    const inked = throughOn && (penHeld.size > 0 || ink.model.strokes.length > 0);
+    layer.hidden = !(explicit || inked);
     layer.classList.toggle('ink-stage--through', throughOn && !explicit);
     if (throughOn) bar.element.hidden = !explicit && !ink.model.strokes.some((stroke) => !owned(stroke.id));
   };
+  const penLeft = (event: PointerEvent): void => {
+    if (!penHeld.delete(event.pointerId)) return;
+    // after the layer's own handler has taken the stroke into the document
+    setTimeout(refresh, 0);
+  };
+  window.addEventListener('pointerup', penLeft);
+  window.addEventListener('pointercancel', penLeft);
   const set = (open: boolean): void => {
     explicit = open;
     refresh();
@@ -176,6 +235,8 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     },
     penDown(event) {
       if (!throughOn || explicit) return;
+      penHeld.add(event.pointerId);
+      refresh();
       if (ink.model.strokes.length === 0) {
         // the stage as it is now is what the drawing is on: its space is the page, and its picture is taken now
         ink.setBackground(null, { w: Math.max(1, stage.clientWidth), h: Math.max(1, stage.clientHeight) });
@@ -184,13 +245,18 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
       }
       ink.pointerDown(event);
     },
-    abort: (pointerId) => ink.abort(pointerId),
+    abort(pointerId) {
+      ink.abort(pointerId);
+      if (penHeld.delete(pointerId)) refresh();
+    },
     setOwned(next) {
       owned = next;
       tell();
     },
     setView: (view) => ink.setView(view),
     dispose() {
+      window.removeEventListener('pointerup', penLeft);
+      window.removeEventListener('pointercancel', penLeft);
       bar.dispose();
       ink.dispose();
       layer.remove();

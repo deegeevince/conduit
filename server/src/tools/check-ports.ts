@@ -3,9 +3,15 @@
 // With no CHECK_PORTS a server takes the system's choice and Chrome picks its own debugging port (0), as before.
 import { createServer } from 'node:net';
 
+/**
+ * Ports a browser refuses to open (Chrome's "unsafe ports", and the fetch standard's list that Node follows too): a server on 5060 or 5061 (SIP) is never reached, and Chrome
+ * on one of them is never asked for its address. A range that holds them (5060-5067) simply does not offer them.
+ */
+const REFUSED_BY_BROWSERS = new Set([1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
+
 const range = (): number[] | null => {
   const found = /^(\d+)-(\d+)$/.exec(process.env['CHECK_PORTS'] ?? '');
-  return found === null ? null : Array.from({ length: Number(found[2]) - Number(found[1]) + 1 }, (_, at) => Number(found[1]) + at);
+  return found === null ? null : Array.from({ length: Number(found[2]) - Number(found[1]) + 1 }, (_, at) => Number(found[1]) + at).filter((port) => !REFUSED_BY_BROWSERS.has(port));
 };
 
 const claimed = new Set<number>();

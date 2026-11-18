@@ -77,6 +77,11 @@ function contextOf(app: StageApp): Record<string, unknown> {
     const stats = (window as unknown as { __inkStrokes?: () => number }).__inkStrokes;
     return typeof stats === 'function' ? stats() : 0;
   };
+  /** whether the stage's ink asked the browser for its low-latency path: what a phone's black screen would first be asked about */
+  const lowLatency = (): boolean | null => {
+    const stats = (window as unknown as { __inkStats?: () => { readonly desynchronized?: boolean } | undefined }).__inkStats;
+    return typeof stats === 'function' ? (stats()?.desynchronized ?? null) : null;
+  };
   return {
     at: new Date().toISOString(),
     session: app.link.session,
@@ -92,6 +97,7 @@ function contextOf(app: StageApp): Record<string, unknown> {
     stage: pick('scene', 'renderer', 'quality', 'fps', 'clock', 'hidden'),
     bodyClasses: [...document.body.classList],
     inkStrokesWaiting: strokes(),
+    inkLowLatency: lowLatency(),
     inkOpen: [...document.querySelectorAll('.ink')].filter(visible).map((layer) => describe(layer)),
     status: app.status().text,
   };
@@ -100,6 +106,11 @@ function contextOf(app: StageApp): Record<string, unknown> {
 /** Takes what is on screen and what just happened, now. */
 function take(app: StageApp, host: HTMLElement): Taken {
   const scale = Math.min(window.devicePixelRatio || 1, 2, SIDE / Math.max(window.innerWidth, window.innerHeight));
+  // the page's size and where the stage stands are read now, with the ink: the picture of the screen is put together after the stage's own has been made, and by then the report's
+  // note may have raised a phone's keyboard and shrunk the page (the picture came out as a short strip of a screen with the stage letterboxed in it)
+  const pageWidth = window.innerWidth;
+  const pageHeight = window.innerHeight;
+  const hostBox = host.getBoundingClientRect();
   const ink = inkOnScreen(scale);
   const events = snapshot();
   const context = contextOf(app);
@@ -112,14 +123,14 @@ function take(app: StageApp, host: HTMLElement): Taken {
     const image = stageUrl === null ? null : await loadImage(stageUrl);
     if (image !== null || ink !== null) {
       const page = document.createElement('canvas');
-      page.width = Math.max(1, Math.round(window.innerWidth * scale));
-      page.height = Math.max(1, Math.round(window.innerHeight * scale));
+      page.width = Math.max(1, Math.round(pageWidth * scale));
+      page.height = Math.max(1, Math.round(pageHeight * scale));
       const ctx = page.getContext('2d');
       if (ctx !== null) {
         ctx.fillStyle = getComputedStyle(document.body).backgroundColor || '#fff';
         ctx.fillRect(0, 0, page.width, page.height);
         if (image !== null) {
-          const box = host.getBoundingClientRect();
+          const box = hostBox;
           const fit = Math.min(box.width / image.width, box.height / image.height);
           const w = image.width * fit;
           const h = image.height * fit;

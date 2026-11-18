@@ -6,10 +6,12 @@
 //   scripts   the `scripts` demo plus Japanese and Korean: each line's box has ink, and the characters of the Han, Japanese and Korean lines are distinct glyphs
 //             (a "?" or a missing-glyph box is the same picture in every cell)
 //   draw      the + menu, Draw: the stage is not dark afterwards (mean luminance and ink share before and after), and one stroke is written and shows
+//   fb-021    the first minute at a phone's size (first load, Stop, Draw, a stroke): the stage's corners and centre are never black, no ink layer is on screen before Draw, the layer's canvases are
+//             transparent, the picture sent is lit, and nothing is asked of the server for the welcome's turn; run as the device does and with the failure modelled on a phone's (black-check.ts)
 //   ask       a touch tap on an `ask` blank has its input focused inside the gesture (iOS's own keyboard cannot appear in desktop WebKit: the focus is what raises it)
 //
 // Not run by CI yet (it needs the WebKit browser: `pnpm exec playwright-core install webkit`, about 100 MB). It skips with a message when the browser is not installed.
-// Run by `pnpm check --webkit` and standalone: `pnpm webkit-check [--url <server>] [--out <dir>] [--only welcome,scripts,draw,ask] [--screens 719x356x3,390x844x3,820x971x2]`.
+// Run by `pnpm check --webkit` and standalone: `pnpm webkit-check [--url <server>] [--out <dir>] [--only welcome,scripts,draw,fb021,ask] [--screens 719x356x3,390x844x3,820x971x2]`.
 // Standalone it starts its own server from the build (BRAIN=replay, a throwaway DATA_DIR under WEBKIT_CHECK_TMP or the system's temp folder, WEBKIT_PORT or a free port).
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -22,6 +24,8 @@ import { webkit } from 'playwright-core';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { sleep, stop, waitFor } from './explore-browser';
+import { FORCED, PASSES, PICTURE_LUM, PROBE, READ_PATCHES, describe, judgeLayer, judgeScreen, patchesOf } from './black-check';
+import type { Patch, Probe } from './black-check';
 import type { CheckResult } from './smoke';
 
 export interface WebkitScreen {
@@ -123,6 +127,16 @@ interface Box {
 
 class Eyes {
   constructor(private readonly util: Page) {}
+
+  /** an expression evaluated in the blank page (a picture's luminance) */
+  evaluate(expression: string): Promise<unknown> {
+    return this.util.evaluate(expression);
+  }
+
+  /** the patches of a screenshot of a page `width` points wide (black-check.ts) */
+  async patches(png: Buffer, width: number, stage: Box, under: number): Promise<Patch[]> {
+    return this.util.evaluate(`(${READ_PATCHES})(${JSON.stringify({ png: png.toString('base64'), width, patches: patchesOf(stage), under })})`) as Promise<Patch[]>;
+  }
 
   async look(page: Page, clip: Box | null, file: string | null, cells = 0): Promise<Cells> {
     const buffer = await page.screenshot(clip === null ? {} : { clip });
@@ -233,8 +247,9 @@ interface Run {
   readonly timeoutMs: number;
 }
 
-async function open(run: Run, query: string): Promise<{ page: Page; faults: string[] }> {
+async function open(run: Run, query: string, init?: string): Promise<{ page: Page; faults: string[] }> {
   const page = await run.context.newPage();
+  if (init !== undefined) await page.addInitScript(init);
   const faults: string[] = [];
   page.on('pageerror', (error) => faults.push(`error: ${error.message}`));
   page.on('console', (message) => message.type() === 'error' && faults.push(`console: ${message.text()}`));
@@ -362,6 +377,78 @@ async function draw(run: Run): Promise<WebkitScene> {
   }
 }
 
+/** the first minute at a phone's size, as the device does and with the failure modelled on a phone's (black-check.ts) */
+async function fb021(run: Run): Promise<WebkitScene> {
+  const began = Date.now();
+  const results: CheckResult[] = [];
+  let picture = '';
+  for (const pass of PASSES) {
+    const problems: string[] = [];
+    const facts: string[] = [];
+    const tag = `${run.screen.name}-${pass.name}`;
+    const { page } = await open(run, '', pass.forced ? FORCED : undefined);
+    const refused: string[] = [];
+    page.on('response', (response) => response.status() >= 400 && /\/snapshot/.test(response.url()) && refused.push(`${response.url().replace(/^https?:\/\/[^/]+/, '')} answered ${response.status()}`));
+    try {
+      await page.evaluate('window.__stage.ready');
+      await waitFor('the stop button', 30_000, async () => ((await page.evaluate('!!document.querySelector(".prompt__button")')) === true ? true : null));
+      const look = async (name: string, ground: number | null): Promise<{ probe: Probe; ground: number }> => {
+        const probe = (await page.evaluate(PROBE)) as Probe;
+        const buffer = await page.screenshot();
+        picture = `${tag}-${name}.png`;
+        await writeFile(join(run.dir, picture), buffer);
+        const patches = await run.eyes.patches(buffer, run.screen.width, probe.stage, (ground ?? 235) * 0.35);
+        const judged = judgeScreen(`${pass.name} ${name}`, patches, ground);
+        problems.push(...judged.problems);
+        facts.push(`${name}: ${describe(patches)}`);
+        return { probe, ground: judged.ground };
+      };
+      await sleep(2500);
+      const first = await look('load', null);
+      if (first.probe.inkOnScreen > 0) problems.push(`${pass.name} load: ${first.probe.inkOnScreen} ink layer(s) are on screen over the stage before anything was drawn`);
+      if (first.probe.stopShown) {
+        const at = (await page.evaluate(`(() => { const r = document.querySelector('.prompt__button').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`)) as { x: number; y: number };
+        await page.touchscreen.tap(at.x, at.y);
+        await sleep(1500);
+        await look('stopped', first.ground);
+      } else facts.push('the welcome had finished before Stop could be pressed');
+      if (refused.length > 0) problems.push(`${pass.name} stop: the page asked the server to keep a picture for a turn it never heard of (${refused.join('; ')})`);
+      await page.evaluate(`document.querySelector('.composer__plus').click()`);
+      await sleep(400);
+      await page.evaluate(`[...document.querySelectorAll('.composer__item')].find((n) => /^Draw/.test(n.textContent.trim())).click()`);
+      await sleep(2500);
+      const drawn = await look('draw', first.ground);
+      problems.push(...judgeLayer(`${pass.name} draw`, drawn.probe));
+      const stage = drawn.probe.stage;
+      const a = { x: stage.x + stage.width * 0.3, y: stage.y + stage.height * 0.4 };
+      const b = { x: stage.x + stage.width * 0.7, y: stage.y + stage.height * 0.6 };
+      await page.mouse.move(a.x, a.y);
+      await page.mouse.down();
+      for (let i = 1; i <= 16; i += 1) {
+        await page.mouse.move(a.x + ((b.x - a.x) * i) / 16, a.y + ((b.y - a.y) * i) / 16);
+        await sleep(16);
+      }
+      await page.mouse.up();
+      await sleep(500);
+      const written = await look('stroke', first.ground);
+      if (written.probe.strokes !== 1) problems.push(`${pass.name} stroke: one stroke was drawn and the ink holds ${written.probe.strokes}`);
+      const url = (await page.evaluate('window.__inkPicture ? window.__inkPicture() : null')) as string | null;
+      if (url === null) problems.push(`${pass.name} picture: no picture was made of the drawing`);
+      else {
+        const lum = (await run.eyes.evaluate(PICTURE_LUM(url))) as number;
+        facts.push(`the picture sent has luminance ${lum.toFixed(0)}`);
+        if (lum < first.ground * 0.6) problems.push(`${pass.name} picture: the picture that would be sent with the drawing is dark (luminance ${lum.toFixed(0)}, the ground ${first.ground.toFixed(0)}): a stage picture that came back black was used`);
+      }
+    } catch (error) {
+      problems.push(`${pass.name}: stopped: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      await page.close();
+    }
+    results.push(result(`webkit-fb-021-${pass.name}`, problems, `${pass.forced ? 'with a low-latency canvas painted black and every GL read zero: ' : ''}first load, Stop, Draw and a stroke: the stage's corners and centre stay lit, the layer is off the screen until Draw, its canvases are transparent, the picture sent is lit, nothing asked of the server for the welcome (${facts.join('; ')})`));
+  }
+  return { name: `fb-021-${run.screen.name}`, picture, seconds: (Date.now() - began) / 1000, results };
+}
+
 async function ask(run: Run): Promise<WebkitScene> {
   const began = Date.now();
   const problems: string[] = [];
@@ -390,11 +477,14 @@ async function ask(run: Run): Promise<WebkitScene> {
   }
 }
 
-const SCENES = { welcome, scripts, draw, ask } as const;
+const SCENES = { welcome, scripts, draw, fb021, ask } as const;
 type SceneName = keyof typeof SCENES;
 
+/** scenes that belong to some of the screens only: fb-021 is about a phone (an iPhone in landscape and upright, not the iPad) */
+const SCREENS_OF: Partial<Record<SceneName, readonly string[]>> = { fb021: ['719x356', '390x844'] };
+
 /** Runs the WebKit scenes at every screen. A failure is a `FAIL` result, never a throw (except that WebKit could not start at all). */
-export async function webkitGroup(base: string, dir: string, timeoutMs: number, note: (text: string) => void = () => undefined, screens: readonly WebkitScreen[] = WEBKIT_SCREENS, only: readonly SceneName[] = ['welcome', 'scripts', 'draw', 'ask']): Promise<WebkitScene[]> {
+export async function webkitGroup(base: string, dir: string, timeoutMs: number, note: (text: string) => void = () => undefined, screens: readonly WebkitScreen[] = WEBKIT_SCREENS, only: readonly SceneName[] = ['welcome', 'scripts', 'draw', 'fb021', 'ask']): Promise<WebkitScene[]> {
   await mkdir(dir, { recursive: true });
   const scenes: WebkitScene[] = [];
   const browser: Browser = await webkit.launch({ headless: true });
@@ -406,6 +496,7 @@ export async function webkitGroup(base: string, dir: string, timeoutMs: number, 
       const run: Run = { base, screen, dir, context, eyes: new Eyes(util), timeoutMs };
       try {
         for (const name of only) {
+          if (SCREENS_OF[name] !== undefined && !SCREENS_OF[name]?.includes(screen.name)) continue;
           note(`webkit: ${name} at ${screen.name}`);
           const began = Date.now();
           try {
@@ -498,7 +589,7 @@ if (process.argv[1] !== undefined && /webkit-check\.ts$/.test(process.argv[1])) 
       const [width = 0, height = 0, dpr = 2] = text.split('x').map(Number);
       return { name: `${width}x${height}`, width, height, dpr };
     });
-    const only = (arg('--only')?.split(',') ?? ['welcome', 'scripts', 'draw', 'ask']) as SceneName[];
+    const only = (arg('--only')?.split(',') ?? ['welcome', 'scripts', 'draw', 'fb021', 'ask']) as SceneName[];
     const given = arg('--url');
     let server: { url: string; stop: () => Promise<void> } | null = null;
     let failed = 0;

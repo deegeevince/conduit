@@ -53,6 +53,12 @@ export interface InkOptions {
   readonly scroller?: HTMLElement | null;
   /** the picture under the ink for the exported picture, when the layer is over something it cannot read back (the stage's capture) */
   readonly backdrop?: () => Promise<InkBackdrop | null>;
+  /**
+   * Ask the browser to present the live canvas on its low-latency path (`desynchronized`: a pen's line follows the pen a frame sooner). Default: only where the main
+   * pointer is a fine one (a mouse, a trackpad, a pen on a desktop). On a phone it is off: the hint hands the canvas to the display more or less directly, around the page's
+   * own compositing, and a layer this big that lies over the whole stage is the first thing a phone's graphics stack gets wrong (fb-021: the screen shown black).
+   */
+  readonly lowLatency?: boolean;
   readonly onChange?: () => void;
   readonly onStroke?: (event: { readonly stroke: InkStroke; readonly region: string | null }) => void;
   /** a stroke or an erase landing is told to the page's status line */
@@ -172,7 +178,9 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
   const live = root.querySelector<HTMLCanvasElement>('.ink__live')!;
   const baseCtx = base.getContext('2d')!;
   // desynchronized: the browser may present this canvas without waiting for the page's next frame, which is what takes a pen's latency from two frames to about one.
-  const liveCtx = live.getContext('2d', { desynchronized: true })!;
+  // Only where the main pointer is a fine one (see `InkOptions.lowLatency`): never on a phone, whose layer lies over the whole stage.
+  const lowLatency = options.lowLatency ?? (typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches);
+  const liveCtx = live.getContext('2d', lowLatency ? { desynchronized: true } : undefined)!;
   const desynchronized = ((liveCtx as unknown as { getContextAttributes?: () => { desynchronized?: boolean } }).getContextAttributes?.()?.desynchronized) === true;
 
   let space: InkSpace = options.document?.space ?? options.space ?? { w: Math.max(1, host.clientWidth), h: Math.max(1, host.clientHeight) };
