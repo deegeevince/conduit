@@ -321,7 +321,7 @@ function fb101(): void {
   // 1. The fixed prompt names the written method for any sum worked by hand, with the form, so a turn that carries no chapter is never left to build one from loose digits.
   const named = system();
   expect('fb-101: the fixed prompt names `math` for a sum worked by hand, typed or in a photo, with its form', [named.includes('`math m1 column|times|split|bond | 43 × 8`'), /worked by hand, typed or in a photo/.test(named)], [true, true]);
-  expect('fb-101: ...and says never digits or boxes the brain places', /never digits or boxes you place/.test(named), true);
+  expect('fb-101: ...says never digits or boxes the brain places, and no `ask` beside it (its Check and Hint are its own)', [/never digits or boxes you place/.test(named), /never an `ask` for it/.test(named), /Check and Hint are built in/.test(named)], [true, true, true]);
   expect('fb-101: a painter that does not paint `math` is not taught it', system(FULL_CAPABILITIES.structures.filter((name) => name !== 'math')).includes('`math m1'), false);
 
   // 2. A photo and vague words in a thread that is about sums carries the chapter; the same turn in a thread that is not does not.
