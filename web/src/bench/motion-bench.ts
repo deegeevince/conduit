@@ -328,8 +328,15 @@ const CASES: readonly Case[] = [
   },
   {
     name: 'film-reduced',
-    // a film made for reduced motion is at rest: the clock is zero, or the time slider's value
-    lines: ['slider t 0 100 0 clock=time | Time', 'circle p 60,45 1 loop=spin around=40,45 period=4'],
+    // a film made for reduced motion is at rest: the clock does not run, so the movers stand where they were drawn
+    lines: ['circle p 60,45 1 loop=spin around=40,45 period=4'],
+    ids: ['p'],
+    probes: [{ how: 'film', time: 13, reduced: true }, { how: 'film', time: 13, reduced: false }],
+  },
+  {
+    name: 'film-reduced-slider',
+    // and a time slider still moves everything, reduced motion or not
+    lines: ['slider t 0 100 0 step=0.01 clock=time | Time', 'circle p 60,45 1 loop=spin around=40,45 period=4'],
     ids: ['p'],
     probes: [{ how: 'film', time: 13, reduced: true }, { how: 'film', time: 13, reduced: true, controls: { t: 1 } }],
   },

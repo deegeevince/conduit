@@ -376,7 +376,8 @@ export function motionVerdicts(captures: readonly Capture[]): MotionVerdict[] {
     for (const read of get('film-rate-slider').reads) j.at(`film ${label(read)}: a slider that is the rate`, centre(read.poses['p']), spin((read.probe.controls?.['speed'] as number) * (read.probe.time ?? 0)), 1e-6);
     for (const read of get('film-time-slider').reads) j.at(`film ${label(read)}: the time slider is the clock, wherever the film is`, centre(read.poses['p']), spin(read.probe.controls?.['t'] as number), 1e-6);
     for (const read of get('film-time-slider-and-rate').reads) j.at(`film ${label(read)}: with both, the slider's value is the clock`, centre(read.poses['p']), spin(read.probe.controls?.['t'] as number), 1e-6);
-    for (const read of get('film-reduced').reads) j.at(`film ${label(read)}: reduced motion holds the clock at rest (zero, or the slider's value)`, centre(read.poses['p']), spin((read.probe.controls?.['t'] as number | undefined) ?? 0), 1e-6);
+    for (const read of get('film-reduced').reads) j.at(`film ${label(read)}: reduced motion holds the clock at rest, and without it the film is at ${read.probe.time}`, centre(read.poses['p']), spin(read.probe.reduced === true ? 0 : (read.probe.time ?? 0)), 1e-6);
+    for (const read of get('film-reduced-slider').reads) j.at(`film ${label(read)}: reduced motion holds the clock at rest (zero, or the time slider's value)`, centre(read.poses['p']), spin((read.probe.controls?.['t'] as number | undefined) ?? 0), 1e-6);
     const two = get('film-two-scenes');
     const second = two.sceneStarts[1] ?? 0;
     j.yes('film two scenes: the second scene opens after the first', second > 0);
