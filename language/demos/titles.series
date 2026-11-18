@@ -10,7 +10,7 @@ say whisper | a short film about
 wait
 say card | WAITING
 cam push slow
-wait 2
+wait 2.6s
 
 scene hold stack lines=3 calm slow
 cam rest
@@ -20,18 +20,8 @@ say a2 | I was thinking.
 say a3 | I am always right.
 wait 2
 correct a3 | I am *sometimes* right.
-wait 2
+wait 2.8s
 
 scene end solo
 say card ink=accent | fin
-wait 2
-
-scene moved layout=caption
-look paper
-card c2 | Words stay in their card
-say x60 in=c2 | Which colour for the fox?
-say x62 choice in=c2 | Orange
-say x64 choice in=c2 | Grey
-move x62 21,72
-move x60 24,58
 wait 2

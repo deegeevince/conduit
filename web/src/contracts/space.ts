@@ -13,6 +13,11 @@ export interface Viewport {
   readonly width: number;
   readonly height: number;
   readonly dpr: number;
+  /**
+   * CSS pixels from the foot of the stage that the page keeps for its own controls over the stage (the tour's bar, fb-004), on top of the line that floats there:
+   * nothing the painter lays out stands in this band, so the stage keeps the room for as long as the controls are up and nothing jumps when they appear. Absent: none.
+   */
+  readonly foot?: number;
 }
 
 export interface Vec3 {

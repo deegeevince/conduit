@@ -1,15 +1,18 @@
 # Art: finished drawings from the shelf, named by what they are. `draw` is one line of intent; the server puts the figure's parts on stage
 # as ordinary shapes (fox1-tail, kid1-hair), so a label can point at a part and the whole figure can move. pnpm check plays it through
-# the server's line path (it needs a shelf), so the parts, the label and the placeholder for an okapi are looked for on screen.
+# the server's line path (it needs a shelf), so the parts, the label and the placeholder for an okapi are looked for on screen. A callout carries a leader to its part, so wherever
+# the painter puts the word it still points at the tail; the placeholder is named, so nobody wonders what the grey shape is.
 
 look paper
 scene shelf figure canvas=square lines=2
 draw fox1 fox at=27,34 size=46 | sitting, facing left
 draw kid1 child at=76,34 size=46 | standing
 draw fox2 fox at=27,78 size=30 new | sitting, facing right
-draw okapi1 okapi at=76,78 size=34
-say label near=fox1-tail:below | tail
-say | A fox, a child and a smaller fox facing the other way, drawn from the shelf; the okapi is not on it yet.
-wait 1
+draw okapi1 okapi at=76,70 size=34
+say callout near=fox1-tail | tail
+say label near=okapi1:below | okapi: not on the shelf yet
+say | A fox, a child and a smaller fox facing the other way, each drawn from the shelf by name.
+wait 1.5s
+say | A figure is one thing: this line moves the whole child.
 move kid1 66,34 over=1s
 wait 2

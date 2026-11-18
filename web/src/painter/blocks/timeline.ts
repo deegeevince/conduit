@@ -185,10 +185,31 @@ function buildTimeline(env: Env): Draft {
       leads.push({ points: pick.lead, closed: false });
       slots.push({ eu: e.eu, ev: e.ev, box: pick.b, u: uc, lead: pick.lead, v0: 0 });
     });
+    // Words in one row that stand closer than a word space read as one sentence ("Sputnik First human in orbit The Apollo programme"): they are staggered on two rows instead (fb-044).
+    const apart = 0.9 * body;
+    const crowdOf = (boxes: readonly Box[]): number => {
+      let n = 0;
+      for (let a = 0; a < boxes.length; a += 1) {
+        for (let b = a + 1; b < boxes.length; b += 1) {
+          const A = boxes[a] as Box;
+          const B = boxes[b] as Box;
+          const sameRow = vertical ? A.x < B.x + B.width && B.x < A.x + A.width : A.y < B.y + B.height && B.y < A.y + A.height;
+          if (!sameRow) continue;
+          const along = vertical ? Math.max(B.y - (A.y + A.height), A.y - (B.y + B.height)) : Math.max(B.x - (A.x + A.width), A.x - (B.x + B.width));
+          if (along < apart) n += 1;
+        }
+      }
+      return n;
+    };
+    const tall = !vertical && items.length > 1 && (notes.length > 0 || Math.max(...placed.map((p) => p.y + p.height)) - Math.min(...placed.map((p) => p.y)) > maxEv * 2.4);
+    const crowded = !vertical && items.length > 1 && crowdOf(placed) > 0;
     // A horizontal axis, labels crowding it in tiers: one row on each side instead, the words moved along the axis so that they
     // clear each other and joined to their dots by slanted leaders. Used when it keeps every leader clear and is the lower.
-    if (!vertical && items.length > 1 && (notes.length > 0 || Math.max(...placed.map((p) => p.y + p.height)) - Math.min(...placed.map((p) => p.y)) > maxEv * 2.4)) {
+    if (tall || crowded) {
       const configs: ((i: number) => number)[] = [() => 0, ...[6, 5, 4, 3, 2].map((k) => (i: number) => (i % k === k - 1 ? 1 : 0))];
+      let applied = false;
+      for (const strict of tall ? [true, false] : [true]) {
+        if (applied) break;
       for (const rowOf of configs) {
         const rows: number[][] = [[], []];
         items.forEach((_, i) => (rows[rowOf(i)] as number[]).push(i));
@@ -231,6 +252,8 @@ function buildTimeline(env: Env): Draft {
           });
         });
         if (bad > 0) continue;
+        // the first pass takes only an arrangement whose words stand a word space apart; the second (when the words were in tiers) takes any that keeps its leaders clear
+        if (strict && crowdOf(all) > 0) continue;
         placed.length = 0;
         leads.length = 0;
         slots.length = 0;
@@ -241,7 +264,9 @@ function buildTimeline(env: Env): Draft {
           leads.push({ points: sLeads[i] as Point[], closed: false });
           slots.push({ eu: 0, ev: 0, box: b, u: dotU[i] as number, lead: sLeads[i] as Point[], v0: 0 });
         });
+        applied = true;
         break;
+      }
       }
     }
     const everything = [...placed, ...tickBoxes, toBox(0, -ER, U, 2 * ER)];
@@ -280,6 +305,10 @@ function buildTimeline(env: Env): Draft {
       const tb = TB(r.tickBoxes[i] as Box);
       parts.push({ kind: 'text', owner: key, part: `tick:${i}`, text: tk.text, emphasis: [], box: tb, spec: env.small(), align: vertical ? 'right' : 'center', role: 'tick', plate: false });
     });
+    // a span's bar is drawn before any event's dot, so a dot that falls inside a span stands on it (fb-044)
+    const markAt = parts.length;
+    const bars: BlockPart[] = [];
+    const dots: BlockPart[] = [];
     items.forEach((it, i) => {
       const s = r.slots[i] as Slot;
       const lb = TB(s.box as Box);
@@ -288,13 +317,13 @@ function buildTimeline(env: Env): Draft {
       if (it.t1 === null) {
         const c = along(r.dotU[i] as number, 0);
         mark = box(c.x - ER, c.y - ER, 2 * ER, 2 * ER);
-        parts.push({ kind: 'shape', owner: it.key, part: 'dot', outline: [circle(c.x, c.y, ER)], role: 'marker' });
+        dots.push({ kind: 'shape', owner: it.key, part: 'dot', outline: [circle(c.x, c.y, ER)], role: 'marker' });
       } else {
         const a = along(r.uOf(it.t0), 0);
         const b = along(r.uOf(it.t1), 0);
         const th = Math.max(ER, env.stroke * 1.5);
         mark = vertical ? box(a.x - th, a.y, 2 * th, b.y - a.y) : box(a.x, a.y - th, b.x - a.x, 2 * th);
-        parts.push({ kind: 'shape', owner: it.key, part: 'bar', outline: [roundedRect(mark, input.look.radius > 0 ? th / 2 : 0)], role: 'bar' });
+        bars.push({ kind: 'shape', owner: it.key, part: 'bar', outline: [roundedRect(mark, input.look.radius > 0 ? th / 2 : 0)], role: 'bar' });
       }
       parts.push({ kind: 'shape', owner: it.key, part: 'leader', outline: [open(lead)], role: 'line' });
       parts.push({
@@ -311,6 +340,7 @@ function buildTimeline(env: Env): Draft {
       });
       boxes.set(it.key, union([mark, lb]));
     });
+    parts.splice(markAt, 0, ...bars, ...dots);
     return { parts, boxes, routes: new Map(), notes: r.notes };
   };
   return { width, height, finish };

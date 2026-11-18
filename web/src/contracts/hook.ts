@@ -39,6 +39,8 @@ export interface StageHook {
   prompt(text: string): Promise<string>;
   /** Plays a fixture script through the replay brain. Resolves with the turn id. */
   demo(name: string): Promise<string>;
+  /** `/demo <name>` as the tour plays it: the demo, with the tour's bar up from its start (for the check, which judges every scene of a tour demo with the bar in place) */
+  tourDemo(name: string): Promise<string>;
   /** The same as tapping the element with this id. */
   tap(id: string): void;
   /** v2.3. The live apps: whether each runs, is shown, what it has saved and what the host refused from it. */

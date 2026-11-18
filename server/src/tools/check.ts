@@ -12,7 +12,7 @@
 //                      script's own words; it settles under reduced motion too
 //   choice             a real tap on a starter is sent as a turn and the replay brain answers it, to rest
 //   every demo         each demo (`problem` has its own scenes) is played by name and comes to rest, the ones the app does not offer yet (`DEMOS_NOT_PAINTED`) too: not offered is not unjudged
-//   explorable         a slider, a toggle and a pick of the explorable demo change the drawing with no request to the server
+//   explorable         a slider and a pick of the explorable demo change the drawing with no request to the server (a higher sun stands higher and throws a shorter shadow, away from it)
 //   problems           each `problem` of language/demos/problem.series (old logs) is played at its own turn: the question is on the canvas with a blank, nothing takes the
 //                      screen, a wrong answer put in the blank is marked wrong and the right one right (no model)
 //   ask                (tablet 1180x820 at two pixels, touch, the lens off and on) a finger tap on an ask's blank focuses its input, also under the Draw layer after a pen stroke;
@@ -24,6 +24,14 @@
 //                      undid stands over it (undo-check.ts)
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
 //                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
+//
+//   fb-023, fb-002     the demo audit's checks with no browser (`pnpm timeline demos`, `pnpm demo-checks`), named by the backlog row they guard (docs/feedback.md): the reading rule, a chart that is what it says, a control
+//                      that changes something; a drawing past its canvas, parts that come apart in a move, a morphed shape that is moved. Their page-side twins run in every demo scene (server/src/tools/demo-check.ts):
+//                      fb-004 the tour's bar (a tour demo plays with it up, and nothing meets it), fb-023 what the scene wrote is on the stage, fb-030 no line let go, fb-037 a label on the side it was written, fb-005 the
+//                      crosshair's tag
+//   showcase           "What Conduit can do" (PLAN-catalogue.md, showcase-check.ts): every live page of language/demos/showcase/*.series is played on a replay server that has a recorded case, one
+//                      unit a category on each screen, and judged like a demo; each page's `expect` ids are on stage with ink; the pages with a hand are worked with real input (a drag, a tap
+//                      on a pick and a switch, a typed prompt, a tap on a choice, a right answer, an undo); the table and the painter agree both ways (`showcase: N live, M not yet (...)`)
 //
 //   hard               language/demos/hard.series: the failures real sessions turned up, one scene each (a 400-character line, CJK, a flowchart, words beside strokes, digits lined up, crowded labels,
 //                      many lines, a dark ground, a photo with callouts); judged like a demo, each scene with its own question
@@ -44,8 +52,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { cpus, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DEMOS, LineReader, TOUR_CHAPTERS, digestFull } from '@conduit/language';
-import type { Attention, Observation } from '@conduit/language';
+import { cutScenes, declaredAtRest, DEMOS, DEMOS_NOT_PAINTED, LineReader, playSource, TOUR_CHAPTERS, digestFull, readShowcase } from '@conduit/language';
+import type { Attention, Declared, Observation, ShowcaseReader } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-browser';
 import { claimPort, releasePort } from './check-ports';
@@ -61,12 +69,15 @@ import { journeyGroup } from './journey-check';
 import { labelGroup } from './label-check';
 import { undoGroup } from './undo-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
+import { checkAxisTags, checkDeclared, checkLabels, checkNoEarlierChip, checkTourBar, scriptGroup } from './demo-check';
+import type { LabelWant } from './demo-check';
 import { fb062Group, loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
 import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
+import { livePages, painterCaps, showcaseCase, showcaseCategory, tableResults } from './showcase-check';
 import { mathsGroup } from './math-check';
-import { checkGlyphs, checkInk, checkListings, checkSlideWords, checkTakeover, flowsGroup, footprintJudge, photoGroup, sceneFactsOf, streamFixtureCheck, testPattern } from './real-check';
+import { checkGlyphs, checkInk, checkListings, checkSlideWords, checkTakeover, flowsGroup, footprintJudge, photoGroup, sceneFactsOf, streamBrainCheck, streamFixtureCheck, testPattern } from './real-check';
 import type { Footprint } from './real-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
@@ -118,7 +129,8 @@ function parseArgs(argv: readonly string[]): Args {
     url: url === undefined ? null : url.replace(/\/+$/, ''),
     out: resolve(flags.get('out') ?? join(tmpdir(), 'conduit-check', new Date().toISOString().replace(/[:.]/g, '-'))),
     screens,
-    timeoutMs: Number(flags.get('timeout') ?? 90) * 1000,
+    // the longest demo (maths) plays for about 105 s at the pace of the stage: a demo is given 150 s to come to rest
+    timeoutMs: Number(flags.get('timeout') ?? 150) * 1000,
     allowPlain: flags.has('allow-plain'),
     sequential: flags.has('sequential'),
     quiet: flags.has('quiet'),
@@ -284,6 +296,8 @@ interface AppFacts {
   readonly shown: boolean;
   readonly crashes: number;
   readonly blank: boolean | null;
+  /** where its frame stands, host CSS pixels (the stage's own element for an app has no size) */
+  readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 }
 
 export interface Scene {
@@ -315,6 +329,24 @@ interface Stage {
   readonly opacity: number;
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 }
+
+/** what a scene's judgement can be asked besides the painter's own account: see `Screen.judge` */
+interface JudgeOptions {
+  readonly earlier?: boolean;
+  readonly footprints?: boolean;
+  readonly photo?: boolean | readonly (readonly [string, number, number])[];
+  /** the things the scene's lines wrote that must be on the stage at its rest (fb-023); also asks that no line was let go (fb-030) */
+  readonly declared?: readonly Declared[];
+  /** a tour demo: the tour's bar must be up and nothing meet it (fb-004); false: it must not be there */
+  readonly tourBar?: boolean;
+  /** the labels written `near=<id>:<side>` (fb-037) */
+  readonly labels?: readonly LabelWant[];
+  /** hover every chart on stage: the crosshair's tag on the bottom axis is a written label or a year in the data (fb-005) */
+  readonly axisTags?: boolean;
+}
+
+/** the demos the tour offers a card for: they are played the way the tour plays them, with its bar */
+const TOUR_DEMOS: ReadonlySet<string> = new Set(TOUR_CHAPTERS.flatMap((chapter) => chapter.cards.flatMap((card) => (card.kind === 'demo' ? [card.name] : []))));
 
 class Screen {
   readonly scenes: Scene[] = [];
@@ -371,7 +403,7 @@ class Screen {
    * `earlier`: a scene before the last of a turn, seen by seeking the clock there: what the turn's report says is about the last scene, so only what the screen shows is judged.
    * `footprints`: also hide each line of words in turn and judge what it really paints (real-check.ts).
    */
-  private async judge(tab: Tab, talk: Conversation, name: string, results: CheckResult[], began: number, report: boolean, prompt: boolean, options: { readonly earlier?: boolean; readonly footprints?: boolean; readonly photo?: boolean } = {}): Promise<Scene> {
+  private async judge(tab: Tab, talk: Conversation, name: string, results: CheckResult[], began: number, report: boolean, prompt: boolean, options: JudgeOptions = {}): Promise<Scene> {
     talk.current = this.scenes.length + 1;
     const picture = await tab.shot();
     const file = `${this.screen.name}-${name.replace(/[^\w-]+/g, '-')}.png`;
@@ -387,11 +419,31 @@ class Screen {
     const add = (check: string, verdict: Verdict, detail: string): void => talk.add(results, check, verdict, detail);
     await checkInk(tab, add, picture, answer.live, tab.dpr);
     await checkTakeover(tab, add);
+    // what the scene's own lines wrote, and the chrome that stands over the stage (docs/demo-audit.md part 4; server/src/tools/demo-check.ts)
+    if (options.tourBar !== undefined) {
+      const found = await checkTourBar(tab, options.tourBar);
+      add('fb-004-tour-bar', found.length === 0 ? 'PASS' : 'FAIL', found.length === 0 ? (options.tourBar ? 'the tour bar is up and nothing on the stage or over it meets it' : 'no tour bar here') : found.join('; '));
+    }
+    if (options.declared !== undefined) {
+      const found = await checkDeclared(tab, options.declared);
+      add('fb-023-declared-on-screen', found.length === 0 ? 'PASS' : 'FAIL', found.length === 0 ? `all ${options.declared.length} things the scene wrote are on the stage, seen` : found.join('; '));
+      const chip = await checkNoEarlierChip(tab);
+      add('fb-030-no-line-let-go', chip.length === 0 ? 'PASS' : 'FAIL', chip.length === 0 ? 'no line of the scene was let go' : chip.join('; '));
+    }
+    if (options.axisTags === true) {
+      const found = await checkAxisTags(tab);
+      add('fb-005-axis-tag', found.length === 0 ? 'PASS' : 'FAIL', found.length === 0 ? 'the crosshair\'s tag on the bottom axis is a written label or a year in the data, at three hover points' : found.join('; '));
+    }
+    if (options.labels !== undefined) {
+      const found = await checkLabels(tab, options.labels);
+      add('fb-037-label-on-its-part', found.length === 0 ? 'PASS' : 'FAIL', found.length === 0 ? `${options.labels.length} labels stand on the side of their part they were written on` : found.join('; '));
+    }
     // a photo's callouts are looked at with a long reach (their leaders run to their spots) and their spots asked for
     const spots = new Map<string, { x: number; y: number }>();
-    if (options.photo === true) {
+    const photoSpots = options.photo === true ? PHOTO_SPOTS : options.photo === undefined || options.photo === false ? [] : options.photo;
+    if (photoSpots.length > 0) {
       const box = answer.live.find((e) => e.id === 'p1')?.box;
-      if (box !== undefined) for (const [id, x, y] of PHOTO_SPOTS) spots.set(id, { x: box.x + (x / 100) * box.width, y: box.y + (y / 100) * box.height });
+      if (box !== undefined) for (const [id, x, y] of photoSpots) spots.set(id, { x: box.x + (x / 100) * box.width, y: box.y + (y / 100) * box.height });
     }
     this.feet = options.footprints === true ? await footprintJudge(tab, add, { scale: tab.dpr, spots }) : new Map();
     const drained = tab.drain();
@@ -412,7 +464,7 @@ class Screen {
   }
 
   /** each scene before the last, at rest: the clock is sought to the moment before the next scene opens, so what is on screen is the end of this one */
-  private async earlierScenes(tab: Tab, talk: Conversation, base: string, starts: readonly number[], footprints: boolean, names?: readonly string[], then?: (index: number, scene: Scene) => Promise<void>, before?: (index: number) => Promise<void>): Promise<void> {
+  private async earlierScenes(tab: Tab, talk: Conversation, base: string, starts: readonly number[], footprints: boolean, names?: readonly string[], then?: (index: number, scene: Scene) => Promise<void>, before?: (index: number) => Promise<void>, extra?: (index: number) => JudgeOptions): Promise<void> {
     for (let index = 0; index + 1 < starts.length; index += 1) {
       const at = Date.now();
       const name = `${base}#${names?.[index] ?? index + 1}`;
@@ -422,7 +474,7 @@ class Screen {
       // a scene's apps are made afresh by the seek: they are let to load, and to be looked at, before the scene is judged
       if (before !== undefined) await before(index);
       const results: CheckResult[] = [];
-      const scene = await this.judge(tab, talk, name, results, at, false, false, { earlier: true, footprints, photo: names?.[index] === 'photo' });
+      const scene = await this.judge(tab, talk, name, results, at, false, false, { earlier: true, footprints, photo: names?.[index] === 'photo', ...extra?.(index) });
       if (then !== undefined) await then(index, scene);
     }
   }
@@ -506,7 +558,8 @@ class Screen {
         talk.seenReports = new Set((await tab.call<Probe>('probe')).reports);
         tab.drain();
         const results: CheckResult[] = [];
-        const started = await tab.eval<string | null>(`Promise.resolve(window.__stage.demo(${JSON.stringify(demo.name)})).then(() => null, (e) => String(e && e.message || e))`);
+        const tour = TOUR_DEMOS.has(demo.name);
+        const started = await tab.eval<string | null>(`Promise.resolve(window.__stage.${tour ? 'tourDemo' : 'demo'}(${JSON.stringify(demo.name)})).then(() => null, (e) => String(e && e.message || e))`);
         const bad = rejectedLines(demo.name);
         Screen.add(results, 'script-lines', bad.slice(0, 3), 'every line of the script reads');
         results.push(Screen.restResult(started !== null ? `the demo would not start: ${started}` : await talk.rest(true), began));
@@ -517,11 +570,21 @@ class Screen {
         const starts = await this.sceneStarts(tab);
         const base = `demo-${demo.name}`;
         const footprints = FOOTPRINT_DEMOS.includes(demo.name);
+        // what each scene's lines wrote, from the language's own reading of the script; skipped when the page and the schedule do not agree on how many scenes there are
+        const cuts = cutScenes(playSource(readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/${demo.name}.series`)), 'utf8')));
+        const agree = cuts.length === starts.length && !DEMOS_NOT_PAINTED.includes(demo.name);
+        const sceneOptions = (index: number): JudgeOptions => {
+          const cut = cuts[index];
+          const charts = demo.name === 'charts' ? { axisTags: true } : {};
+          if (!agree || cut === undefined) return { ...charts, ...(tour ? { tourBar: true } : {}) };
+          const labels = cut.elements.flatMap((element): LabelWant[] => (element.kind === 'text' && element.style.near !== null && !element.style.leader && element.style.near.part === undefined && element.exit === null ? [{ text: element.text, target: element.style.near.id, side: element.style.near.side as LabelWant['side'] }] : []));
+          return { declared: declaredAtRest(cut), labels: labels.filter((label) => ['above', 'below', 'left', 'right'].includes(label.side)), ...charts, ...(tour ? { tourBar: true } : {}) };
+        };
         const facts = FACT_DEMOS.includes(demo.name) ? sceneFactsOf(readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/${demo.name}.series`)), 'utf8')) : null;
-        const last = await this.judge(tab, talk, starts.length > 1 ? `${base}#${starts.length}` : base, results, began, true, first, { footprints });
+        const last = await this.judge(tab, talk, starts.length > 1 ? `${base}#${starts.length}` : base, results, began, true, first, { footprints, ...sceneOptions(starts.length - 1) });
         if (facts !== null) await this.sceneFacts(tab, talk, facts, starts.length, starts.length - 1, last.results);
         if (demo.name === 'scripts') await this.scriptGlyphs(tab, talk, results);
-        if (starts.length > 1) await this.earlierScenes(tab, talk, base, starts, footprints, undefined, facts === null ? undefined : (index, scene) => this.sceneFacts(tab, talk, facts, starts.length, index, scene.results));
+        if (starts.length > 1) await this.earlierScenes(tab, talk, base, starts, footprints, undefined, facts === null ? undefined : (index, scene) => this.sceneFacts(tab, talk, facts, starts.length, index, scene.results), undefined, sceneOptions);
         first = false;
       }
     } finally {
@@ -1285,7 +1348,41 @@ class Screen {
     Screen.add(results, 'art', problems, `fox1 ${partsOf('fox1').length}, kid1 ${partsOf('kid1').length} and the mirrored fox2 ${partsOf('fox2').length} parts on stage, the label by the tail, a quiet placeholder for the okapi`);
   }
 
-  /** a slider, a toggle and a pick of the explorable demo: the drawing changes, and no request is made */
+  /**
+   * "What Conduit can do": every live page of one category, each played in a tab of its own on the server that has the recorded case, and judged like a demo (showcase-check.ts).
+   * The server's case answers the typed question, the tap and the right answer of `sum`; `only` (SHOWCASE_ONLY) picks pages by id.
+   */
+  async showcaseScenes(category: string, only: readonly string[] | null): Promise<void> {
+    await showcaseCategory(
+      {
+        base: this.base,
+        timeoutMs: this.args.timeoutMs,
+        note: (text) => this.note(text),
+        open: () => this.open('', false),
+        look: (tab) => this.look(tab),
+        judge: (tab, talk, name, results, began, options) => this.judge(tab, talk, name, results, began, true, false, options),
+        feet: () => this.feet,
+        appsLooked: (tab) => this.appsLooked(tab),
+        apps: (tab) => this.appsOf(tab),
+        sessionOf: (tab) => this.sessionOf(tab),
+      },
+      category,
+      only,
+    );
+  }
+
+  /** the table of what Conduit can do held to what the painter says it can paint, both ways (showcase-check.ts) */
+  async showcaseTable(reader: ShowcaseReader): Promise<CheckResult[]> {
+    const { tab } = await this.open('', false);
+    try {
+      await this.look(tab);
+      return tableResults(reader, await painterCaps(tab));
+    } finally {
+      await tab.close();
+    }
+  }
+
+  /** a slider and a pick of the explorable demo: the drawing changes (a higher sun stands higher and throws a shorter shadow, away from it), the sentence says the number, and no request is made */
   private async explorable(tab: Tab, talk: Conversation, results: CheckResult[]): Promise<void> {
     interface Control {
       readonly id: string;
@@ -1314,25 +1411,47 @@ class Screen {
     };
     const list = await controls();
     const slider = list.find((control) => control.control === 'slider');
-    const toggle = list.find((control) => control.control === 'toggle');
     const pick = list.find((control) => control.control === 'pick');
     const problems: string[] = [];
-    if (slider === undefined || toggle === undefined || pick === undefined) {
-      Screen.add(results, 'explorable', [`the explorable demo should hold a slider, a toggle and a pick; found ${list.map((control) => control.control).join(', ') || 'nothing'}`], '');
+    if (slider === undefined || pick === undefined) {
+      Screen.add(results, 'explorable', [`the explorable demo should hold a slider and a pick; found ${list.map((control) => control.control).join(', ') || 'nothing'}`], '');
       return;
     }
     const sent = tab.posted.length;
     const requests = (): number => tab.pending();
     const start = await settled();
-    // the slider: set through the page's hook (a drag is the same call), to well away from where it stands
-    await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, ${JSON.stringify(Number(slider.value) > 45 ? 15 : 75)})`);
+    // fb-029: the sun and its shadow at the two ends of the slider. A higher sun stands higher, throws a shorter shadow, and the shadow falls away from the sun.
+    const sun = async (): Promise<{ readonly sun: { x: number; y: number; width: number; height: number } | null; readonly shadow: { x: number; y: number; width: number; height: number } | null; readonly said: string }> =>
+      tab.eval(`(() => { const live = window.__stage.elements(); const box = (id) => { const e = live.find((c) => c.id === id); return e ? { x: e.box.x, y: e.box.y, width: e.box.width, height: e.box.height } : null; }; const said = live.find((c) => c.kind === 'text' && /^Sun /.test(String(c.text || ''))); return { sun: box('sun'), shadow: box('shadow'), said: said ? String(said.text) : '' }; })()`);
+    await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, 20)`);
+    const low = await settled().then(sun);
+    await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, 80)`);
     const afterSlider = await settled();
+    const high = await sun();
+    if (low.sun === null || low.shadow === null || high.sun === null || high.shadow === null) problems.push('the sun or its shadow is not on stage');
+    else {
+      if (!(high.sun.y < low.sun.y - 10)) problems.push(`a higher sun must stand higher: the sun's top is at ${Math.round(low.sun.y)} at 20 and ${Math.round(high.sun.y)} at 80`);
+      if (!(high.shadow.width < low.shadow.width - 20)) problems.push(`a higher sun must throw a shorter shadow: ${Math.round(low.shadow.width)} px at 20, ${Math.round(high.shadow.width)} px at 80`);
+      if (!(low.shadow.x + low.shadow.width / 2 > low.sun.x + low.sun.width / 2)) problems.push('the shadow must fall away from the sun, and it falls on the same side');
+    }
+    // the shadow all the way along the slider (it is bound over four parts of the range, chained): it only ever shortens as the sun goes up, and at 45 degrees it is the length the sentence says
+    // (2 m against 5.5 m at 20 degrees: a ratio of 0.36)
+    const along = [20, 26, 32, 38, 45, 50, 56, 62, 68, 74, 80];
+    const lengths: number[] = [];
+    for (const angle of along) {
+      await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, ${angle})`);
+      await settled();
+      lengths.push((await sun()).shadow?.width ?? 0);
+    }
+    const grew = lengths.findIndex((length, at) => at > 0 && length > (lengths[at - 1] as number) + 4);
+    if (grew > 0) problems.push(`the shadow grew again as the sun went up: ${along.map((angle, at) => `${angle} ${Math.round(lengths[at] as number)}`).join(', ')}`);
+    const ratio = (lengths[4] as number) / Math.max(1, lengths[0] as number);
+    if (ratio < 0.3 || ratio > 0.43) problems.push(`the shadow at 45 degrees is ${ratio.toFixed(2)} of its length at 20; a 2 m post throws 2 m against 5.5 m (0.36)`);
+    await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, 80)`);
+    await settled();
+    if (!/Sun 20\D*\bup\b/.test(low.said) || !/Sun 80\D*\bup\b/.test(high.said)) problems.push(`the live sentence does not say the angle: "${low.said}" at 20 and "${high.said}" at 80`);
     if (afterSlider === start) problems.push(`moving the slider "${slider.label}" changed nothing in the drawing`);
-    // the toggle: a real tap on it
-    const toggleBox = (await controls()).find((control) => control.id === toggle.id)?.box ?? toggle.box;
-    await tab.tap(toggleBox.x + toggleBox.width / 2, toggleBox.y + toggleBox.height / 2);
-    const afterToggle = await settled();
-    if (afterToggle === afterSlider) problems.push(`tapping the toggle "${toggle.label}" changed nothing in the drawing`);
+    const afterToggle = afterSlider;
     // the pick: another option (a pick is set by its 1-based position)
     const shown = (await controls()).find((control) => control.id === pick.id)?.valueText ?? '';
     const next = Math.max(1, pick.options.findIndex((option) => option !== shown) + 1);
@@ -1344,7 +1463,7 @@ class Screen {
     else if (afterPick === afterToggle) problems.push(`choosing "${String(other)}" in the pick "${pick.id}" changed nothing in the drawing`);
     if (tab.posted.length !== sent) problems.push(`working the controls sent ${tab.posted.length - sent} turn(s) to the server: they must not need a round trip`);
     if (requests() !== 0) problems.push(`${requests()} request(s) still in flight after working the controls`);
-    Screen.add(results, 'explorable-controls', problems, 'slider, toggle and pick each changed the drawing, with no turn sent');
+    Screen.add(results, 'explorable-controls', problems, 'the slider moved the sun and shortened its shadow, away from it, the sentence said the angle, and the pick changed the drawing, with no turn sent');
   }
 }
 
@@ -1382,6 +1501,8 @@ const COLUMNS: readonly (readonly [string, string])[] = [
   ['slide-words', 'slides'],
   ['glyphs', 'glyph'],
   ['hard', 'hard'],
+  ['showcase-expect', 'expect'],
+  ['showcase-hands', 'hands'],
   ['chrome-readable', 'chrome'],
   ['prompt-readable', 'prompt'],
   ['no-console-errors', 'console'],
@@ -1421,8 +1542,8 @@ async function webkitHook(base: string, out: string, timeoutMs: number, quiet: b
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The groups, and how they are run
 
-/** which server a group plays against: the main one (shared: every tab here has its own Chrome profile, so its own session), one with a fake art maker, or one that chains `refine` */
-type Needs = 'main' | 'art' | 'chain' | 'slow' | 'none';
+/** which server a group plays against: the main one (shared: every tab here has its own Chrome profile, so its own session), one with a fake art maker, one that chains `refine`, or the showcase's (shared by its units, started when the first begins: a recorded case answers three of its turns) */
+type Needs = 'main' | 'art' | 'chain' | 'slow' | 'showcase' | 'none';
 
 /** what one group wrote: its lines for the report, how many problems, and what check.json keeps */
 interface Output {
@@ -1605,8 +1726,8 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     needs: 'slow',
     weight: 25,
     run: async (servers, out) => {
-      out.lines.push('\nstream (a turn at 80 characters a second, a recorded stream-json turn)');
-      const results = await streamFixtureCheck();
+      out.lines.push('\nstream (a turn at 80 characters a second, a recorded stream-json turn, the same turn through the brain)');
+      const results = [...(await streamFixtureCheck()), ...(await streamBrainCheck())];
       if (servers.slow === null) results.push({ turn: 0, check: 'stream-first-element', verdict: 'SKIP', detail: 'skipped (--url was given: this needs a server that streams slowly)' });
       else results.push(...(await new Screen(args, servers.slow, args.screens[0] as Args['screens'][number], join(args.out, 'stream'), welcome).streamScene()));
       checkLines(out, results);
@@ -1671,6 +1792,27 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       checkLines(out, results);
     },
   });
+  // the demo audit's checks that read the schedule and the painter's boxes with no browser, named by the backlog row they guard (docs/demo-audit.md part 4)
+  units.push({
+    name: 'fb-023',
+    also: ['fb-028', 'fb-033', 'fb-042'],
+    needs: 'none',
+    weight: 8,
+    run: async (_servers, out) => {
+      out.lines.push('\nfb-023 (pnpm timeline demos): every scene stays up as long as reading it takes and arrives before it leaves; every chart is what it says; every control changes something');
+      checkLines(out, await scriptGroup('fb-023', ['timeline', 'demos'], 'the reading rule, the charts and the controls of every demo hold'));
+    },
+  });
+  units.push({
+    name: 'fb-002',
+    also: ['fb-003', 'fb-029', 'fb-032', 'fb-050'],
+    needs: 'none',
+    weight: 10,
+    run: async (_servers, out) => {
+      out.lines.push('\nfb-002 (pnpm demo-checks): no drawing runs past its canvas, no object comes apart in a move');
+      checkLines(out, await scriptGroup('fb-002', ['demo-checks'], 'every demo scene and every memory step stays on its canvas and no object comes apart in a move'));
+    },
+  });
   units.push({
     name: 'maths',
     needs: 'none',
@@ -1708,6 +1850,59 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       out.lines.push(`\ncontinue ${CONTINUE_SCREEN.name}`);
       sceneLines(out, scenes);
     },
+  });
+  // "What Conduit can do" (PLAN-catalogue.md, showcase-check.ts): the table held to the painter once, and each category's pages played and judged on each screen, one unit a category so they
+  // run side by side. SHOWCASE_ONLY=sum,type plays just those pages; `--only showcase-numbers` is one category.
+  const reader = readShowcase();
+  const only = (process.env['SHOWCASE_ONLY'] ?? '').split(',').map((id) => id.trim()).filter((id) => id !== '');
+  units.push({
+    name: 'showcase',
+    also: ['showcase-table'],
+    needs: 'showcase',
+    weight: 15,
+    run: async (servers, out) => {
+      out.lines.push(`\n${reader.summary()}`);
+      const base = servers.showcase ?? servers.main;
+      if (base === null) return void out.lines.push('  SKIP showcase-needs: nothing to read what the painter paints from');
+      const dir = join(args.out, 'showcase');
+      await mkdir(dir, { recursive: true });
+      checkLines(out, await new Screen(args, base, args.screens[0] as Args['screens'][number], dir, welcome).showcaseTable(reader));
+    },
+  });
+  screens.forEach((entry, at) => {
+    const { screen, stopped } = entry;
+    const dir = join(args.out, screen.name);
+    reader.categories.forEach((category, index) => {
+      const pages = livePages(reader, category.id).length;
+      if (pages === 0) return;
+      units.push({
+        name: 'showcase',
+        also: [`showcase-${category.id}`],
+        needs: 'showcase',
+        weight: 10 + 14 * pages,
+        run: async (servers, out) => {
+          const base = servers.showcase;
+          if (base === null) return void (at === 0 && index === 0 ? out.lines.push('\nshowcase pages: skipped (--url was given and SHOWCASE_CHECK_URL names no server with the recorded case: REPLAY_CASE=<showcaseCase()>)') : undefined);
+          const own = new Screen(args, base, screen, dir, welcome);
+          if (entry.began === 0) entry.began = Date.now();
+          try {
+            await mkdir(dir, { recursive: true });
+            await own.showcaseScenes(category.id, only.length === 0 ? null : only);
+          } catch (error) {
+            const why = `showcase ${category.id}: ${error instanceof Error ? error.message : String(error)}`;
+            stopped.push(why);
+            process.stdout.write(`[${screen.name}] ABORTED ${why}\n`);
+          } finally {
+            entry.run.scenes.push(...own.scenes);
+            if (entry.run.renderer === 'unknown') {
+              entry.run.renderer = own.renderer;
+              entry.run.gpu = own.gpu;
+            }
+            entry.ended = Date.now();
+          }
+        },
+      });
+    });
   });
   return { units, screens };
 }
@@ -1764,11 +1959,38 @@ async function main(): Promise<void> {
     // the main server is up for the whole run; the art and continuation servers (each for one group) are started as their group begins and stopped when it ends,
     // so they hold a port only while they are needed
     const wants = (needs: Needs): boolean => chosen.some((unit) => unit.needs === needs);
-    const address: Record<Needs, string | null> = { main: null, art: null, chain: null, slow: null, none: null };
-    const extras: Record<'art' | 'chain' | 'slow', () => Promise<Record<string, string>>> = {
+    const address: Record<Needs, string | null> = { main: null, art: null, chain: null, slow: null, showcase: null, none: null };
+    const extras: Record<'art' | 'chain' | 'slow' | 'showcase', () => Promise<Record<string, string>>> = {
       slow: async () => ({ REPLAY_CPS: '80' }),
       art: async () => ({ ART_MAKER: 'fake', ART_FAKE_MS: String(ART_FAKE_MS), ART_FAKE_STAGES: 'on' }),
       chain: async () => ({ REFINE: 'on', REPLAY_CASE: await continueFixtures() }),
+      showcase: async () => ({ REPLAY_CASE: await showcaseCase() }),
+    };
+    // the showcase's units share one server (its case is read by session, and every tab has a session of its own): the first to begin starts it, the last to end stops it, so it holds
+    // a port only while pages are being played
+    const lease: { users: number; up: Promise<Started> | null } = { users: 0, up: null };
+    const lend = async (): Promise<string> => {
+      lease.users += 1;
+      lease.up ??= extras.showcase().then(startServer).then((server) => {
+        servers.push(server);
+        return server;
+      });
+      try {
+        return (await lease.up).url;
+      } catch (error) {
+        lease.users -= 1;
+        lease.up = null;
+        throw error;
+      }
+    };
+    const giveBack = async (): Promise<void> => {
+      lease.users -= 1;
+      if (lease.users > 0 || lease.up === null) return;
+      const up = lease.up;
+      lease.up = null;
+      const server = await up;
+      servers.splice(servers.indexOf(server), 1);
+      await server.stop();
     };
     if (args.url === null) {
       if (wants('main')) {
@@ -1779,11 +2001,12 @@ async function main(): Promise<void> {
     } else {
       address.main = args.url;
       address.art = process.env['ART_CHECK_URL'] ?? null;
+      address.showcase = process.env['SHOWCASE_CHECK_URL'] ?? null;
       if (!(await fetch(`${args.url}/api/health`).then((response) => response.ok, () => false))) usage(`nothing answers at ${args.url}/api/health`);
     }
     base = address.main ?? args.url ?? '';
     const jobs = args.jobs;
-    process.stdout.write(`check: ${base === '' ? 'no server needed' : base}${args.url === null && base !== '' ? ' (started here, BRAIN=replay)' : ''}, screens ${args.screens.map((screen) => screen.name).join(', ')}, ${chosen.length} of ${units.length} groups, ${jobs} at a time, pictures in ${args.out}\n`);
+    process.stdout.write(`check: ${base === '' ? (wants('showcase') ? 'a replay server with the showcase case, started when its first page is played' : 'no server needed') : base}${args.url === null && base !== '' ? ' (started here, BRAIN=replay)' : ''}, screens ${args.screens.map((screen) => screen.name).join(', ')}, ${chosen.length} of ${units.length} groups, ${jobs} at a time, pictures in ${args.out}\n`);
     // the long ones first; each group's output is kept and printed in the report's order
     const order = [...chosen].sort((a, b) => b.weight - a.weight);
     await pool(order, jobs, async (unit) => {
@@ -1791,9 +2014,13 @@ async function main(): Promise<void> {
       outputs.set(unit, out);
       const here = { ...address };
       let own: Started | null = null;
+      let lent = false;
       const at = Date.now();
       try {
-        if (args.url === null && (unit.needs === 'art' || unit.needs === 'chain' || unit.needs === 'slow')) {
+        if (args.url === null && unit.needs === 'showcase') {
+          here.showcase = await lend();
+          lent = true;
+        } else if (args.url === null && (unit.needs === 'art' || unit.needs === 'chain' || unit.needs === 'slow')) {
           own = await startServer(await extras[unit.needs]());
           servers.push(own);
           here[unit.needs] = own.url;
@@ -1803,6 +2030,7 @@ async function main(): Promise<void> {
         out.failures += 1;
         out.lines.push(`  FAIL ${unit.name} stopped: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
+        if (lent) await giveBack();
         if (own !== null) {
           servers.splice(servers.indexOf(own), 1);
           await own.stop();
@@ -1816,7 +2044,7 @@ async function main(): Promise<void> {
       const { run, screen, stopped } = entry;
       if (run.scenes.length === 0 && stopped.length === 0) continue;
       const offered = judgedDemos();
-      const sequence = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), 'demo-hard', ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill', 'follow'];
+      const sequence = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), 'demo-hard', ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill', 'follow', ...readShowcase().live().map((page) => `showcase-${page.id}`)];
       // a demo's scenes keep their own order (`demo-diagrams#1`, `#2`...; the hard cases by the order of the file)
       const place = (name: string): number => sequence.indexOf(name.split('#')[0] as string) + (name.includes('#') ? (Number(name.split('#')[1]) || hardOrder(name.split('#')[1] as string)) / 1000 : 0);
       run.scenes.sort((a, b) => place(a.name) - place(b.name));

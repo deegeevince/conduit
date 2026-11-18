@@ -91,6 +91,27 @@ say | Seventh line of eight.
 say | Eighth line of eight.
 wait 1
 
+# a choice in a card stands apart: each is a target of its own, and the card's own words stay in it (moved out of the sketchbook demo, fb-035: a regression case is not a show)
+scene cardchoices layout=caption
+look paper
+card cc1 | Words stay in their card
+say cq in=cc1 | Which shape has three sides?
+say ca choice in=cc1 | Triangle
+say cb choice in=cc1 | Square
+say cn aside | Choices in a card stand apart, each a target of its own.
+wait 1
+
+# words and choices in a card keep together when the card's parts are moved (moved out of the titles demo, fb-035)
+scene cardmoved layout=caption
+look paper
+card cc2 | Words stay in their card
+say mq in=cc2 | Which colour for the fox?
+say ma choice in=cc2 | Orange
+say mb choice in=cc2 | Grey
+move ma 21,72
+move mq 24,58
+wait 1
+
 # fb-051: a slider bound to moves to points (and a shape drawn again) moves every shape it names as it is dragged, half way at half way (the check drags it with real pointer events), and a control whose binds change nothing is told
 scene fb-051 layout=figure lines=3
 circle fbdisc 60,40 18 stroke=ink thick=0.4

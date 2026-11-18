@@ -71,6 +71,7 @@ Only the selected brain's settings are read.
 | `SIGHT` | no | `snapshot` | what a brain is told about how its last answer landed: `report` (the structured report) or `snapshot` (the report and a picture of the resting stage). With `report` the browser takes and sends no picture. |
 | `CLAUDE_MODEL` | when `BRAIN=claude-cli` | none | passed to `claude --model`, for example `sonnet` |
 | `BRAIN_EFFORT` | no | `low` | passed to `claude --effort` on every spawn and written over `CLAUDE_EFFORT` in the child, so a shell that exports `CLAUDE_EFFORT` never changes the brain's latency or cost. `low`, `medium`, `high`. The exploration battery's plain baseline uses the same value. |
+| `BRAIN_THINKING` | no | `on` | `off` starts every claude process with `--thinking disabled`: no hidden deliberation before the first line and none between tool calls. Measured with opus at medium effort (docs/technology.md, "Streaming"): with it on, the model deliberated for 12 to 15 s and then drafted its answer inside `canvas_fits` calls, and the answer reached the stage in one burst 42 to 116 s in; off, the first line came at 5 s and the lines spread over the 8 s the model took to write them. What it costs in the quality of the answers (and of the look-and-fix pass, which runs on the same process) was not measured. |
 | `PROMPT_VARIANT` | no | `column` | which teaching of the prompt. One exists; a second, `hero`, was measured, scored level and was removed. The battery's `--variant` is how two are compared. |
 | (v2) `REVIEW` | no | `on` | look and fix: the brain is shown its draft and fixes it within the turn. The conductor runs the pass; the viewer's switch in the bar sends `x-conduit-review: off` to turn it off for them. |
 | (v2) `REVIEW_PASSES`, `REVIEW_DRAFT_WAIT_MS`, `REVIEW_FIRST_LINE_MS`, `REVIEW_PASS_MS` | no | `1`, `1500`, `12000`, `30000` | fix passes after the draft (0 to 2), and the three waits |
@@ -359,7 +360,8 @@ await __stage.chart('x2', { hover: 3 })   // (v2) or { zoom: 2 }, { pan: 1 }, { 
 | `clock` is `holding` | the playhead caught up with the pen and the brain has not written more. With `relay`, that brain is you. |
 | `clock` is `waiting` for a long time with `BRAIN=relay` | nobody has claimed the prompt. `curl -s -X POST 'localhost:4300/api/relay/next'` |
 | `brain_failed … CLAUDE_BIN` | Claude Code is not installed or not on the PATH. |
-| the brain is slow to start writing | `pnpm sessions <file>` shows thinking tokens per turn; they should be zero. Check `BRAIN_EFFORT`. |
+| the brain is slow to start writing | `pnpm sessions <file>` shows thinking tokens per turn; they should be zero. Check `BRAIN_EFFORT`, and `BRAIN_THINKING=off`. |
+| the whole answer arrives at once, after a long wait | the model made a tool call (`canvas_fits`, a search) before its first line: the text a model writes after a tool result reaches us in one piece. `pnpm stream-probe "<prompt>"` shows it (one model call); `BRAIN_THINKING=off` or `BRAIN_EFFORT=low` make a tool-first answer much rarer. See docs/technology.md, "Streaming". |
 | a painting never arrives | there is no image model: a `paint` line leaves its sketch, by design. |
 | `__stage.state().fault` is not null | a frame or an element threw and the painter dropped it and kept running; the text says what. A script that names a colour or style like a built-in word is the usual cause. |
 | the stage is plain text without paper or grain | WebGL2 was unavailable and the plain renderer took over; `__stage.state().renderer` says which is running. |

@@ -31,6 +31,7 @@ export * from './document';
 export * from './teach';
 export * from './prompt';
 export * from './demos';
+export * from './demo-scenes';
 export * from './explore';
 export * from './taste';
 export * as maths from './maths/index';

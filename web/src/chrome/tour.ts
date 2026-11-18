@@ -30,6 +30,9 @@ async function settled(app: StageApp, turn: string): Promise<boolean> {
 
 /** The live sequence of the memory card: real scripts, one turn each, so the server remembers them as it remembers an answer. */
 async function playMemory(app: StageApp, deps: TourDeps): Promise<void> {
+  const tryText = tourTryFor('memory') ?? 'Draw a cat, then draw a dog, then bring the cat back';
+  // the bar is up for the whole sequence, so the stage keeps its room from the first turn (fb-004); "Try it yourself" waits for the end
+  app.showTourBar(tryText, false);
   let first = '';
   for (const [index, step] of MEMORY_STEPS.entries()) {
     const turn = await app.playScript(step.replaceAll('{1}', first));
@@ -39,7 +42,7 @@ async function playMemory(app: StageApp, deps: TourDeps): Promise<void> {
     await sleep(900);
   }
   app.announce(TOUR_MEMORY_NOTE);
-  app.showTourBar(tourTryFor('memory') ?? 'Draw a cat, then draw a dog, then bring the cat back');
+  app.showTourBar(tryText, true);
 }
 
 export function mountTour(app: StageApp, deps: TourDeps): void {

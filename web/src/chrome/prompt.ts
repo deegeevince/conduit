@@ -122,6 +122,36 @@ export function mountPromptBar(
   if (status === null || top === null || float === null || activity === null || notice === null || extra === null || composer === null || cancel === null || form === null || input === null || button === null || plus === null) {
     throw new Error('The prompt bar could not be built.');
   }
+  // The line over the stage's lower edge is centred on the stage, not on the page: with the language pane on, the bar spans both columns and the stage is only the right part of it, so a line
+  // centred on the page lay over the stage's lower left (fb-006). It spans the stage's column, whatever the layout makes it.
+  const centreOnStage = (): void => {
+    const stage = document.getElementById('stage');
+    if (stage === null || !root.isConnected) return;
+    const s = stage.getBoundingClientRect();
+    const r = root.getBoundingClientRect();
+    if (s.width === 0 || r.width === 0) return;
+    const off = Math.abs(s.left + s.width / 2 - (r.left + r.width / 2)) > 1.5;
+    if (!off) {
+      float.style.left = '';
+      float.style.right = '';
+      return;
+    }
+    float.style.left = `${Math.round(s.left - r.left + 8)}px`;
+    float.style.right = `${Math.round(r.right - s.right + 8)}px`;
+  };
+  if (typeof ResizeObserver !== 'undefined') {
+    const place = new ResizeObserver(centreOnStage);
+    place.observe(root);
+    let tries = 0;
+    const find = (): void => {
+      const stage = document.getElementById('stage');
+      if (stage !== null) {
+        place.observe(stage);
+        centreOnStage();
+      } else if ((tries += 1) < 30) requestAnimationFrame(find);
+    };
+    find();
+  }
   const menu = mountComposerMenu(plus, root);
   // Read aloud: the browser's own voice, on this device. A new message, Stop and a voice note all stop it at once.
   const speaker = pageSpeaker();
@@ -282,6 +312,8 @@ export function mountPromptBar(
       // The words are always kept (the page's own rest check reads them); whether they are *shown* is the rule above.
       const alreadySet = status.textContent === text;
       status.textContent = text;
+      // the pill is one line (it must not outgrow the room the stage keeps for it, fb-006): the whole of the words are its tooltip and are in the notice below
+      status.title = text;
       if (!alreadySet) notice.textContent = announce ? text : '';
       const stopped = text === 'stopped';
       const routine = !announce || stopped;
