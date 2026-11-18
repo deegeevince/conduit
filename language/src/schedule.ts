@@ -10,6 +10,7 @@
 
 import { pickHasOption } from './bind';
 import { chartModelOf } from './chart';
+import { FIGURE_REVISE, figureReviseEnd, figureRowOf } from './figure';
 import { namesIn, numberOf, parseExpr } from './expr';
 import { boundsOf, containedIn, inFrame, lengthOf, outlineOf, pointAlong, refitInside } from './geometry';
 import { isLessonVerb, stageAskOf } from './lesson';
@@ -185,6 +186,8 @@ export type Figure =
       readonly marks?: readonly TableMark[];
       /** FG2. A figure: `cutaway` or `exploded`; absent or null: plain. Its parts, routes and steps are its rows, one line each. */
       readonly mode?: 'cutaway' | 'exploded' | null;
+      /** A figure written again in a turn, with parts replaced, added and dropped: each change in the turn's own time, so the figure can be shown as it was and the change played; carried off at the end of the turn */
+      readonly history?: readonly FigureRevision[];
       /** A written method (`math`): what the line said, and what later lines did to its parts. The painter works every digit from it (`maths/written.ts`). */
       readonly math?: MathFigure | null;
       /** A problem: the question exactly as given, what it accepts, and the ways it was asked to offer; the stage draws the rest */
@@ -232,6 +235,27 @@ export type Figure =
   | { readonly kind: 'field'; readonly field: AmbientKind; readonly amount: Amount };
 
 /** An element that is on stage when a turn begins. */
+/** One change a turn made to a figure that was on stage, at `at` on the turn's clock: a row (part, route or step) that was dropped, put right in place, or added. `index` is where it stood in the rows when it happened. `words`: it is a step, which is only words: kept so that the rows can be taken back exactly, and never played. */
+export type FigureRevision =
+  | { readonly kind: 'drop'; readonly index: number; readonly cells: readonly string[]; readonly at: number; readonly row?: 'part' | 'route'; readonly words?: true }
+  | { readonly kind: 'replace'; readonly index: number; readonly was: readonly string[]; readonly at: number; readonly row?: 'part' | 'route'; readonly words?: true }
+  | { readonly kind: 'add'; readonly index: number; readonly at: number; readonly row?: 'part' | 'route'; readonly words?: true };
+
+/**
+ * How a labelled drawing (a `figure`) rested when the turn that drew it ended: the room the stage plan gave it and the way the figure kit set it in that room. The next turn of the same
+ * scene, if it goes on with the drawing (a part swapped, the words round it changed), keeps it there at that size while its labels still fit and the room is still there: the
+ * painter fills it in at the end of a turn, so the drawing the person was looking at does not move when what is round it changes. Nothing the brain writes.
+ */
+export interface FigureHold {
+  /** the room the plan gave it, in the stage units of the reading plane, and the screen it was given at (a hold is not kept for another) */
+  readonly room: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+  readonly view: { readonly width: number; readonly height: number };
+  /** the size the figure kit laid it out in, and how it set it there: a point of the figure's own space is at (x * scale + offset.x, y * scale + offset.y) */
+  readonly size: { readonly width: number; readonly height: number };
+  readonly scale: number;
+  readonly offset: { readonly x: number; readonly y: number };
+}
+
 export interface CarriedElement {
   readonly key: string;
   readonly id: string;
@@ -254,6 +278,8 @@ export interface CarriedElement {
    * to working it out from the lines when it is absent.
    */
   readonly placed?: CanvasBox;
+  /** a figure's resting room and how it was set (`FigureHold`); only the painter knows it, and its report fills it in */
+  readonly held?: FigureHold;
   /** true when it was corrected: it lingers struck through beside its replacement */
   readonly struck: boolean;
   /** key of the struck element this one replaced, if any */
@@ -421,6 +447,8 @@ export interface ElementSpan {
   readonly driven: readonly DrivenChange[];
   /** carried in already struck through */
   readonly struck: boolean;
+  /** a carried figure's resting room and how the figure kit set it, as the turn before left it */
+  readonly held?: FigureHold;
   /** v2.1. The address its words link to; absent: not a link */
   readonly href?: string;
   /** L3. Shorter forms of its words (`say | long || short`); `text` is the longest, and times the line. The stage shows the first that fits at the legible floor. */
@@ -718,6 +746,12 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
    */
   const echoing = new Map<Live, number>();
   /**
+   * A figure written again under its id is an edit of it, not a second drawing: the lines that follow are read against the figure's own parts and routes by id (a part or a
+   * route under an id it has replaces that one where it stands, a new id is added, `drop` takes parts away) and what is not named stays. `steps` is how many `step` lines the edit
+   * has written: the steps it writes are the whole list, the earlier ones beyond them go, and none written leaves the steps as they were.
+   */
+  const editing = new Map<Live, { steps: number }>();
+  /**
    * A mock-up written again: a `screen` block whose first screen has the id of a screen already on stage is not a second block. Its lines are put into
    * the block that holds that screen, in the screen's place (`merging`, by the id of the new block). `old` are the rows the screen had, which a row that says
    * the same keeps (and its time), `cursor` where the next row goes.
@@ -747,6 +781,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       changes: [],
       driven: [...(element.driven ?? [])],
       struck: element.struck,
+      ...(element.held !== undefined && { held: element.held }),
       ...(element.href !== undefined && { href: element.href }),
     };
     const entry: Live = {
@@ -1351,13 +1386,14 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         openFigure.structure === line.verb &&
         (line.verb === 'table' || line.verb === 'chart') &&
         (line.verb === 'table' ? (line.bars === true) === openFigure.bars : alike(line.chart ?? DEFAULT_CHART, openFigure.chart) && alike(line.words ?? [], openFigure.words) && alike(line.data ?? null, openFigure.data));
-      if (open !== null && openFigure?.kind === 'structure' && openFigure.structure === line.verb && (STRUCTURE[line.verb].parts === 'nodes' || sameRows)) {
+      if (open !== null && openFigure?.kind === 'structure' && openFigure.structure === line.verb && (STRUCTURE[line.verb].parts === 'nodes' || sameRows || line.verb === 'figure')) {
         const merged = mergeStyles(sheet, line.styles, line.props);
         for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
         const change = coloured(seq, merged.props);
         const patched = patchStyle(open.style, change);
         const title = line.title === undefined ? null : splitEmphasis(line.title);
-        const figure = { ...openFigure, grow: line.grow ?? openFigure.grow, box: line.box ?? openFigure.box, route: line.route ?? openFigure.route };
+        const figure = { ...openFigure, grow: line.grow ?? openFigure.grow, box: line.box ?? openFigure.box, route: line.route ?? openFigure.route, ...(line.verb === 'figure' && line.mode !== undefined && { mode: line.mode }) };
+        if (line.verb === 'figure') editing.set(open, { steps: 0 });
         // D2(b): the diagram said again exactly as it stands is nothing, not even a pass of its layout.
         if (sameStyle(patched, open.style) && alike(figure, openFigure) && (title === null || (title.plain === open.span.text && alike(title.emphasis, open.span.emphasis)))) {
           if (sameRows) echoing.set(open, 0);
@@ -2001,6 +2037,90 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           const app = table.span.figure.structure === 'app';
           const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune' || table.span.figure.structure === 'screen' || table.span.figure.structure === 'figure' || app;
           const interfaced = table.span.figure.structure === 'screen';
+          // A figure written again is an edit (`editing`): its lines are read against its parts and routes by id, and `drop` takes parts away. Each change is kept in the
+          // figure's `history`, in the turn's own time, so that the painter can show the figure as it was before it and play the change on its own clock.
+          const figureEdit = table.span.figure.structure === 'figure' ? editing.get(table) : undefined;
+          let logAdd: 'part' | 'words' | false = false;
+          if (table.span.figure.structure === 'figure') {
+            const edit = figureEdit;
+            const wanted = figureRowOf(line.cells);
+            // when it came (the turn's clock when the line arrived), not when the pen is free: the lines of a burst are one change, and the lines after it wait for it to play
+            const changedAt = Math.max(entry.floor, FIGURE_REVISE.lead);
+            const rowsNow = table.rows as StructureRow[];
+            const store = (...made: FigureRevision[]): number => {
+              const figure = table.span.figure as Extract<Figure, { kind: 'structure' }>;
+              const history = made.length === 0 ? figure.history : [...(figure.history ?? []), ...made];
+              table.span.figure = { ...figure, rows: [...rowsNow], ...(history === undefined ? {} : { history }) };
+              return made.length === 0 ? 0 : figureReviseEnd(history ?? []);
+            };
+            if (edit === undefined && wanted.kind === 'drop') {
+              report(seq, 'no-structure', `drop takes parts away from a figure that is already on stage: write \`figure ${line.id}\` again first, then \`drop\` the parts`, line.id);
+              lines.push({ seq, verb: line.verb, start: pen, end: pen });
+              break;
+            }
+            if (edit !== undefined && wanted.kind === 'drop') {
+              const made: FigureRevision[] = [];
+              for (const id of wanted.ids) {
+                const at = rowsNow.findIndex((row) => {
+                  const have = figureRowOf(row.cells[0] ?? '');
+                  return (have.kind === 'part' || have.kind === 'route') && have.id === id;
+                });
+                const gone = at < 0 ? undefined : rowsNow[at];
+                if (gone === undefined) report(seq, 'unknown-id', `no part or route called "${id}" is in the figure "${line.id}"; nothing to drop`, id);
+                else {
+                  made.push({ kind: 'drop', index: at, cells: gone.cells, at: changedAt, row: figureRowOf(gone.cells[0] ?? '').kind === 'route' ? 'route' : 'part' });
+                  rowsNow.splice(at, 1);
+                }
+              }
+              const playedUntil = store(...made);
+              if (made.length > 0) pen = Math.max(pen, playedUntil);
+              lines.push({ seq, verb: line.verb, start: changedAt, end: Math.max(changedAt, playedUntil) });
+              break;
+            }
+            if (edit !== undefined && (wanted.kind === 'part' || wanted.kind === 'route')) {
+              const at = rowsNow.findIndex((row) => {
+                const have = figureRowOf(row.cells[0] ?? '');
+                return have.kind === wanted.kind && have.id === wanted.id;
+              });
+              const have = at < 0 ? undefined : rowsNow[at];
+              if (have !== undefined) {
+                // the same id: that part is put right where it stands, and the painter plays the change (the old one leaves, the new one is drawn); the same words are nothing
+                let playedUntil = changedAt;
+                if (!alike(have.cells, [line.cells])) {
+                  rowsNow[at] = { cells: [line.cells], at: have.at };
+                  playedUntil = Math.max(changedAt, store({ kind: 'replace', index: at, was: have.cells, at: changedAt, row: wanted.kind === 'route' ? 'route' : 'part' }));
+                  pen = Math.max(pen, playedUntil);
+                }
+                lines.push({ seq, verb: line.verb, start: changedAt, end: playedUntil });
+                break;
+              }
+              logAdd = 'part';
+            }
+            if (edit !== undefined && wanted.kind === 'step') {
+              // the steps are the stepper's words, not a drawing: they are put right at once and are not part of what the painter plays
+              const stepAt = rowsNow.flatMap((row, index) => (figureRowOf(row.cells[0] ?? '').kind === 'step' ? [index] : []));
+              const n = edit.steps;
+              edit.steps += 1;
+              const here = stepAt[n];
+              if (here !== undefined) {
+                const have = rowsNow[here] as StructureRow;
+                const made: FigureRevision[] = [];
+                if (!alike(have.cells, [line.cells])) {
+                  rowsNow[here] = { cells: [line.cells], at: have.at };
+                  made.push({ kind: 'replace', index: here, was: have.cells, at: changedAt, words: true });
+                }
+                // the steps this edit writes are the whole list: the earlier ones beyond them are gone
+                for (const gone of stepAt.slice(n + 1).reverse()) {
+                  made.push({ kind: 'drop', index: gone, cells: (rowsNow[gone] as StructureRow).cells, at: changedAt, words: true });
+                  rowsNow.splice(gone, 1);
+                }
+                store(...made);
+                lines.push({ seq, verb: line.verb, start: changedAt, end: changedAt });
+                break;
+              }
+              logAdd = 'words';
+            }
+          }
           // A line of code is one cell, exactly as written: a bar in it is a bar, a space is a space, and an empty line is a row.
           const cells = coded ? [line.cells] : splitCells(line.cells);
           const step = (app ? APP_ROW_SECONDS : interfaced ? UI_ROW_SECONDS : coded ? CODE_ROW_SECONDS : charted ? CHART_ROW_SECONDS : TABLE_ROW_SECONDS)[pace];
@@ -2042,7 +2162,17 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           const landed: StructureRow = { cells: cells.slice(0, LIMITS.cells), at };
           rowSeq.set(landed, seq);
           table.rows.push(landed);
-          table.span.figure = { ...table.span.figure, rows: [...table.rows] };
+          // a part, route or step the edit adds is kept in the figure's history, to be drawn in on the painter's clock
+          const addedAt = Math.max(entry.floor, FIGURE_REVISE.lead);
+          const history = logAdd && table.span.figure.structure === 'figure' ? [...(table.span.figure.history ?? []), { kind: 'add' as const, index: table.rows.length - 1, at: addedAt, ...(logAdd === 'words' ? { words: true as const } : { row: (figureRowOf(line.cells).kind === 'route' ? 'route' : 'part') as 'part' | 'route' }) }] : undefined;
+          table.span.figure = { ...table.span.figure, rows: [...table.rows], ...(history === undefined ? {} : { history }) };
+          if (figureEdit !== undefined) {
+            // a part, route or step the edit adds: the part comes in on the painter's clock with the rest of the change (the line is when it arrived, and lasts as long as the change plays); a step is only words
+            const playedUntil = history === undefined || logAdd === 'words' ? addedAt : Math.max(addedAt, figureReviseEnd(history));
+            if (playedUntil > addedAt) pen = Math.max(pen, playedUntil);
+            lines.push({ seq, verb: line.verb, start: addedAt, end: playedUntil });
+            break;
+          }
           if (!BACKDROP_LAYERS.includes(table.style.layer)) pen = Math.max(pen, at + step);
           lines.push({ seq, verb: line.verb, start: at, end: at + step });
           break;

@@ -1,0 +1,11 @@
+# The swap journey with the follow-up worded as an extension of the drawing on stage: the same beat, and the car is asked to be gone on from rather than swapped as a whole.
+# A scripted walk through one live conversation, played on the real brain. Never a replay. (See car.journey for what each step does.)
+
+# three seconds of idle screen before the first key
+hold 3
+car: type | Show me the main parts of a car
+rest
+hold 3
+swap: type | Extend the current drawing: swap the engine for an electric motor and battery, and keep everything else as it is
+rest
+hold 4

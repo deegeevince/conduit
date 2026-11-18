@@ -58,8 +58,8 @@ export interface FigureSpec {
   readonly steps: readonly FigureStepSpec[];
 }
 
-/** The words a figure's own lines begin with; inside a figure these are its rows and nothing else's. */
-export const FIGURE_WORDS: readonly string[] = ['path', 'poly', 'line', 'ellipse', 'rect', 'circle', 'route', 'step'];
+/** The words a figure's own lines begin with; inside a figure these are its rows and nothing else's. `drop` takes parts away from a figure that is already on stage. */
+export const FIGURE_WORDS: readonly string[] = ['path', 'poly', 'line', 'ellipse', 'rect', 'circle', 'route', 'step', 'drop'];
 const PART_WORDS: readonly string[] = ['path', 'poly', 'line', 'ellipse', 'rect', 'circle'];
 
 const NAME = /^[a-z][a-z0-9_-]*$/;
@@ -90,6 +90,32 @@ export function figureRowLine(raw: string, ordinal: number): string {
   const first = rest[0] ?? '';
   const named = NAME.test(first.toLowerCase()) && !/^(smooth|optional|cut)$/i.test(first);
   return named ? text : [verb, `p${ordinal}`, ...rest].join(' ') + (tail === '' ? '' : ` ${tail}`);
+}
+
+/** What one row of a figure is: a part or a route (named, so that a figure written again can find it), a step (counted, not named), or a `drop` of named parts. */
+export type FigureRowKind =
+  | { readonly kind: 'part'; readonly id: string }
+  | { readonly kind: 'route'; readonly id: string }
+  | { readonly kind: 'step' }
+  | { readonly kind: 'drop'; readonly ids: readonly string[] }
+  | { readonly kind: 'other' };
+
+/** The reading of a figure's row that a figure written again goes by: parts and routes by their ids, as `readFigure` names them. */
+export function figureRowOf(raw: string): FigureRowKind {
+  const text = raw.trim();
+  const bar = barOf(text);
+  const head = (bar < 0 ? text : text.slice(0, bar)).trim();
+  const [verbWord = '', ...rest] = tokens(head);
+  const verb = verbWord.toLowerCase();
+  if (verb === 'step') return { kind: 'step' };
+  if (verb === 'drop') return { kind: 'drop', ids: rest.flatMap((word) => word.split(',')).map((word) => word.trim().toLowerCase()).filter((word) => NAME.test(word)) };
+  if (verb === 'route') {
+    const name = rest.find((word) => !word.includes('=') && NAME.test(word.toLowerCase()));
+    return name === undefined ? { kind: 'other' } : { kind: 'route', id: name.toLowerCase() };
+  }
+  if (!PART_WORDS.includes(verb)) return { kind: 'other' };
+  const idWord = rest.find((word) => !word.includes('=') && NAME.test(word.toLowerCase()) && !/^(smooth|optional|cut)$/i.test(word));
+  return idWord === undefined ? { kind: 'other' } : { kind: 'part', id: idWord.toLowerCase() };
 }
 
 function barOf(text: string): number {
@@ -136,6 +162,7 @@ export function readFigure(id: string, title: string, mode: FigureModeSpec, rows
       else if (steps.length < LIMIT.steps) steps.push({ show, words: words.slice(0, LIMIT.words) });
       continue;
     }
+    if (verb === 'drop') continue;
     if (!PART_WORDS.includes(verb)) {
       notes.push(`"${verbWord}" is not a line of a figure; ignored`);
       continue;
@@ -243,3 +270,68 @@ step show=veins,la | Fresh blood comes back into the left atrium.
 step show=lv,aorta | The left ventricle, the thickest wall, sends it to the whole body. || The left ventricle pumps it to the body.
 end
 say aside approx from=recalled | About 70 beats a minute at rest. Valves stop it flowing back.`;
+
+/**
+ * A figure already on stage is changed in place: said again under its id, then only what changes. Carried while one stands (never in the system prompt, which is full), because
+ * the figure's parts are not shapes the brain can `drop` or `set` one by one, and the only other way to change one was to draw the whole thing again in a new scene.
+ */
+export const FIGURE_EDIT = `A LABELLED DRAWING ON STAGE IS CHANGED IN PLACE, NOT DRAWN AGAIN: write \`figure <its id>\` again (a new title only if it changes), then only the lines that change, then \`end\`. A part or \`route\` line under an id the figure has replaces that one where it stands; a new id adds a part (give every new part an id of its own); \`drop <id> <id>\` takes parts or a route away. \`step\` lines, if you write any, are the whole list of steps (none leaves them as they are). Whatever you do not name stays exactly as it is, so the picture does not move; but whatever the change makes untrue goes with the part named, so drop that too. A route or a step you keep must not name a part you dropped. A new \`scene\` clears the whole drawing: it is for a new subject.`;
+
+/**
+ * How the painter plays a change to a figure that is on stage, on its own clock and whenever the lines came: each part that goes (or is put right) fades out in turn, then each part that
+ * comes (or is put right) is drawn in, then the routes, then the labels. What the change leaves alone is never faded or redrawn. A part is played no earlier than the line that made it
+ * arrived, and each waits its turn behind the one before, so a change that streams in over seconds plays as it comes and a burst plays one after another.
+ * The pacing is here so that the turn lasts as long as the change plays (`figureReviseEnd`); `lead`: a change is never earlier than this into a turn, so that the figure as it was is on
+ * screen for the change to play from (a layout epoch is a quarter of a second at the least); `most`: a change that would take longer is played faster; `move`: a part that stays but
+ * is set again (the figure was fitted to its room afresh) eases to its new place over this long.
+ */
+export const FIGURE_REVISE = { lead: 0.3, leave: 0.5, leaveStagger: 0.12, enter: 0.7, enterStagger: 0.25, route: 0.6, label: 0.5, labelStagger: 0.12, move: 0.8, most: 6 } as const;
+
+/** One thing the change plays: something that leaves, a part that is drawn in, a route, or a label; `at` is when the line that made it arrived (the turn's clock). */
+export interface ReviseItem {
+  readonly at: number;
+  readonly kind: 'leave' | 'part' | 'route' | 'label';
+}
+
+/**
+ * When, from the first of them, each item is played, and when it is all over: what leaves goes first, in turn; then the parts that come, each after the one before and no earlier
+ * than its line arrived; then the routes; then the labels. A change longer than `FIGURE_REVISE.most` is played at the pace that fits it (`pace`: the share of each time and stagger kept).
+ */
+export function reviseTimes(items: readonly ReviseItem[]): { readonly starts: readonly number[]; readonly end: number; readonly pace: number } {
+  if (items.length === 0) return { starts: [], end: 0, pace: 1 };
+  const first = Math.min(...items.map((item) => item.at));
+  const run = (k: number): { readonly starts: number[]; readonly end: number; readonly pace: number } => {
+    const starts: number[] = new Array<number>(items.length).fill(0);
+    const queue = (kind: ReviseItem['kind'], from: number, stagger: number, seconds: number): number => {
+      const order = items.flatMap((item, i) => (item.kind === kind ? [i] : [])).sort((a, b) => (items[a] as ReviseItem).at - (items[b] as ReviseItem).at || a - b);
+      let cursor = from;
+      let end = from;
+      for (const i of order) {
+        const start = Math.max((items[i] as ReviseItem).at - first, cursor);
+        starts[i] = start;
+        cursor = start + stagger * k;
+        end = Math.max(end, start + seconds * k);
+      }
+      return end;
+    };
+    const left = queue('leave', 0, FIGURE_REVISE.leaveStagger, FIGURE_REVISE.leave);
+    const drawn = queue('part', left, FIGURE_REVISE.enterStagger, FIGURE_REVISE.enter);
+    const routed = queue('route', drawn, 0, FIGURE_REVISE.route);
+    const end = queue('label', routed, FIGURE_REVISE.labelStagger, FIGURE_REVISE.label);
+    return { starts, end, pace: k };
+  };
+  const whole = run(1);
+  const k = whole.end > FIGURE_REVISE.most ? FIGURE_REVISE.most / whole.end : 1;
+  return k === 1 ? whole : run(k);
+}
+
+/** On the turn's clock, when a figure's change has finished playing: from its history (the steps are only words and are not played), the same queue the painter plays. 0 when nothing was played. */
+export function figureReviseEnd(history: readonly { readonly kind: 'drop' | 'replace' | 'add'; readonly at: number; readonly row?: 'part' | 'route'; readonly words?: true }[]): number {
+  const played = history.filter((change) => change.words !== true);
+  if (played.length === 0) return 0;
+  const items: ReviseItem[] = played.flatMap((change): ReviseItem[] => {
+    const comes: ReviseItem[] = change.row === 'route' ? [{ at: change.at, kind: 'route' }] : [{ at: change.at, kind: 'part' }, { at: change.at, kind: 'label' }];
+    return change.kind === 'drop' ? [{ at: change.at, kind: 'leave' }] : change.kind === 'add' ? comes : [{ at: change.at, kind: 'leave' }, ...comes];
+  });
+  return Math.min(...items.map((item) => item.at)) + reviseTimes(items).end;
+}

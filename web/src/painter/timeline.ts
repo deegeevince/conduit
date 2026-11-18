@@ -139,6 +139,8 @@ export interface Timeline {
   fitAt(sceneId: string, time: number): CanvasFit;
   /** v2.1: how the stage is divided at `time`, host CSS pixels with the camera at rest */
   planAt(time: number): StagePlanView;
+  /** the room the plan gave a structure or a chart as of `time`, reading-plane stage units (what a figure is held in from one turn to the next); null when it has none */
+  roomAt(element: ElementSpan, time: number): Box | null;
   /** PLAN-canvas step 0: what the layout gave up in the scene at `time` (everything but the apps, which the host knows), as facts */
   squeezeAt(time: number): Omit<SqueezeInput, 'apps'>;
   /** PLAN-canvas step 2: the page the scene at `time` is laid out on, in stage units with its top-left at the screen's top-left; null while the screen is the page */
@@ -1027,11 +1029,19 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       // where the scene's words begin, among its blocks, is a fact of the scene, not of the moment: words that have retired still say which side they were on,
       // so that a table does not hop above and below the words as the first lines leave
       const firstWord = elements.reduce((least, element) => (element.scene === scene.id && cardIsInFlow(styleAt(element, element.enter?.start ?? start)) ? Math.min(least, element.order) : least), Number.POSITIVE_INFINITY);
+      // the one block that this turn goes on with, as the turn before left it at rest: the room it is kept in (the words give way to it; see `keepHeight`)
+      const keepHeightOf = (list: readonly StageBlock[]): number | undefined => {
+        const only = list.filter((block) => block.kind !== 'picture' && block.pinned === null);
+        const span = only.length === 1 ? drawnByKey.get(only[0]?.key ?? '') : undefined;
+        const hold = span?.held;
+        return span === undefined || hold === undefined || !span.carried || span.scene !== scene.id || hold.view.width !== viewport.width || hold.view.height !== viewport.height ? undefined : hold.room.height;
+      };
       const planWith = (list: readonly StageBlock[]): StagePlan =>
         planStage({
           viewport,
           look,
           layout: scene.layout,
+          ...(keepHeightOf(list) === undefined ? {} : { keepHeight: keepHeightOf(list) as number }),
           blocks: list,
           beside,
           ...(grow ? { grow: true } : {}),
@@ -1182,6 +1192,22 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         }
       }
       if (cut !== null) plan = { ...plan, rooms: cut };
+    }
+    // A drawing the turn before left at rest, which this turn goes on with in the same scene, keeps the room it had, its place and its size, for as long as the plan can still give it
+    // that room: words that re-flow round it or a label column that widens do not move it or resize it. A room the plan can no longer give it (it fits less) is the plan's.
+    {
+      let kept: Map<string, Box> | null = null;
+      for (const element of drawn) {
+        const hold = element.held;
+        if (hold === undefined || !element.carried || element.scene !== scene.id) continue;
+        const room = plan.rooms.get(element.key);
+        if (room === undefined || hold.view.width !== viewport.width || hold.view.height !== viewport.height) continue;
+        const inside = hold.room.x >= room.x - 2 && hold.room.y >= room.y - 2 && hold.room.x + hold.room.width <= room.x + room.width + 2 && hold.room.y + hold.room.height <= room.y + room.height + 2;
+        if (!inside) continue;
+        kept ??= new Map(plan.rooms);
+        kept.set(element.key, { ...hold.room });
+      }
+      if (kept !== null) plan = { ...plan, rooms: kept };
     }
     // drawn things that words given a point keep clear of: the outlines and drawings on the canvas (a filled card, or a shape that fills most of
     // the picture, is a ground the words are meant to stand on) and the boxes the brain gave structures
@@ -3173,6 +3199,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     retired,
     lastLayoutChange: structures.lastChange,
     layoutNotesAt: structures.notesAt,
+    roomAt: roomOfBlock,
     mathAt: structures.mathAt,
     frameAt: (instant) => cached(instant).frame,
     viewsAt: (instant) => cached(instant).views,

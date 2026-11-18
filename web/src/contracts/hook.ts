@@ -2,7 +2,7 @@ import type { BackEvent, ControlValue, Sight } from '@conduit/language';
 import type { AppProbe } from './app';
 import type { ExportJob, ExportRequest } from './export';
 import type { ChartProbe, ChartView } from './chart';
-import type { BindingView, ControlView, LeaderView, LineView, PainterSnapshot, StageElementView, UiMockup } from './painter';
+import type { BindingView, ControlView, FigureFrameView, LeaderView, LineView, PainterSnapshot, StageElementView, UiMockup } from './painter';
 
 /**
  * `window.__stage`: how a tester (human or agent) inspects and drives a stage
@@ -59,6 +59,8 @@ export interface StageHook {
   hide(keys: readonly string[]): readonly string[];
   /** The leader lines of the callouts on stage: where each ends, and the part it reaches. */
   leaders(): readonly LeaderView[];
+  /** For a test: the frames of a figure's parts, routes and labels `seconds` into the turn, and how much of each is shown (see the painter's `figureFrames`). */
+  figureFrames(seconds: number): readonly FigureFrameView[];
   /** What the controls bind on the stage's elements, as it holds now: bound words, table marks, `set` values. What the catalogue's pick check reads. */
   bindings(): readonly BindingView[];
   /** PLAN-canvas step 1 (`?lens=1`): the lens now. `view` is null at rest; `touched` once a person has moved it. Null without the flag. */

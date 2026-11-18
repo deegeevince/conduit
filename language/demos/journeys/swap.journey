@@ -1,0 +1,12 @@
+# The swap journey: the film's one beat about a drawing that is kept. A scripted walk through one live conversation, played on the real brain. Never a replay.
+# The car is drawn, then one part of it is swapped, and the rest of the car must stay exactly where it is: the engine, fuel and exhaust leave, a motor and a battery arrive.
+# The steps are the car journey's (see car.journey for what each one does).
+
+# three seconds of idle screen before the first key
+hold 3
+car: type | Show me the main parts of a car
+rest
+hold 3
+swap: type | Swap the engine for an electric motor and battery, and keep the rest of the car the same
+rest
+hold 4

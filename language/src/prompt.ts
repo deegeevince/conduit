@@ -22,7 +22,7 @@ import type { BriefForm, DocumentFacts, LineProblem, MemoryRow, TechniqueCard, T
 
 export type { BriefForm };
 import { asksForLiveApp, asksToMakeGame } from './app';
-import { FIGURE_CHAPTER, asksForFigure } from './figure';
+import { FIGURE_CHAPTER, FIGURE_EDIT, asksForFigure } from './figure';
 import { INTERFACE_CHAPTER } from './interface';
 import { ASK_CHAPTER, ASK_CHAPTER_WITH_DOCUMENT, DOCUMENT_CHAPTER, carriesAsk, carriesDocument, documentBlocks, hasLesson, usesParts } from './teach';
 import { MATHS_CHAPTER, aboutMaths, carriesMaths } from './problem';
@@ -1158,6 +1158,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   // FG2: a labelled drawing is taught when the words ask for one, or while one is on stage to be changed; never in the system prompt.
   const figureOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'figure');
   if (context.capabilities.structures.includes('figure') && !liveApp && ((input.kind === 'prompt' && asksForFigure(input.text)) || figureOnStage)) parts.push(FIGURE_CHAPTER);
+  // A figure that stands is changed by its parts (said again under its id: replace, add, drop), not drawn again in a new scene.
+  if (context.capabilities.structures.includes('figure') && !liveApp && figureOnStage && input.kind !== 'act') parts.push(FIGURE_EDIT);
   // A maths question the person answers is a `math` block (a written method) or an `ask` like any other: taught when the turn is about one (its words, the library's maths card, a written method or a photo's questions on stage)
   // and while the thread of sums is warm (`carriesMaths`, fb-101: a turn of "in columns" or "Please look at what I drew" says nothing a cue could read, and the fixed prompt only names the method); never in the system prompt.
   if (!liveApp && carriesMaths(context, input)) parts.push(MATHS_CHAPTER);
@@ -1208,7 +1210,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     // (not on a tour of what is new: that is a new subject by nature, and its scenes are asked for)
     if (input.kind === 'prompt' && !(about?.news !== undefined && about.news !== null && about.news !== '')) {
       parts.push(
-        `IF THIS CONTINUES WHAT IS ON STAGE (a follow-up, "now…", "and…", "make it…", a change to it): write only what changes, by id: \`set\`, \`move\`, a new line added, or the structure, chart or control's own line again under its id with only what differs. A line said again under an id with nothing new is nothing, so never repeat what is there; the user keeps what they set.${live.length === 0 ? '' : ` Live ids you can change in place: ${live.join(', ')}.`} \`scene\` only for a new subject.`,
+        `IF THIS CONTINUES WHAT IS ON STAGE (a follow-up, "now…", "and…", "make it…", a change to it): write only what changes, by id: \`set\`, \`move\`, a new line added, or the structure, chart or control's own line again under its id with only what differs. A line said again under an id with nothing new is nothing, so never repeat what is there; the user keeps what they set. When they ask to change part of what is drawn (swap, add, take away or recolour a part, "keep the rest"), that is a change to it: keep the scene and every part that stays, drop or redraw only the parts that change by their ids (YOUR DRAWING NOW, or the parts listed under a figure), and add the new ones.${live.length === 0 ? '' : ` Live ids you can change in place: ${live.join(', ')}.`} \`scene\` only for a new subject.`,
       );
     }
   }

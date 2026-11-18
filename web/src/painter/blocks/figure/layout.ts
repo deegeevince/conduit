@@ -86,6 +86,8 @@ export interface FigureLayout {
   readonly input: FigureInput;
   readonly step: number;
   readonly scale: number;
+  /** where the figure's own space lands: a point at (x, y) of it is at (x * scale + offset.x, y * scale + offset.y) px. What a turn that goes on with the figure keeps (`FigureKeep`). */
+  readonly offset: Pt;
   /** the subject's box, px */
   readonly subject: Rect;
   readonly stage: Rect;
@@ -195,8 +197,18 @@ export function litParts(input: FigureInput, step: number): ReadonlySet<string> 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 const lastOf = <T>(list: readonly T[]): T | undefined => list[list.length - 1];
 
+/**
+ * How a figure was set the last time it was laid out: a figure the next turn of its scene goes on with (a part swapped, the words round it changed) is set the same way when its labels
+ * still fit, so the drawing stays where it was and as big as it was. Never a coordinate the brain wrote: the kit's own fit, kept.
+ */
+export interface FigureKeep {
+  readonly scale: number;
+  readonly offset: Pt;
+}
+
 interface Fit {
   readonly scale: number;
+  readonly offset: Pt;
   readonly share: number;
   readonly labelPx: number;
   readonly placed: ReadonlyMap<string, PlacedLabel>;
@@ -204,7 +216,7 @@ interface Fit {
   readonly crossings: number;
 }
 
-export function layoutFigure(input: FigureInput, held: { readonly step: number }, size: { readonly width: number; readonly height: number }, env: FigureEnv): FigureLayout {
+export function layoutFigure(input: FigureInput, held: { readonly step: number }, size: { readonly width: number; readonly height: number }, env: FigureEnv, keep?: FigureKeep): FigureLayout {
   const W = Math.max(1, size.width);
   const H = Math.max(1, size.height);
   const notes: FigureNote[] = [];
@@ -283,8 +295,9 @@ export function layoutFigure(input: FigureInput, held: { readonly step: number }
 
   const centreX = sub.x + sub.width / 2;
   const centreY = sub.y + sub.height / 2;
-  const toPx = (scale: number, p: Pt): Pt => ({ x: room.x + room.width / 2 + (p.x - centreX) * scale, y: room.y + room.height / 2 + (p.y - centreY) * scale });
-  const pxPoly = (poly: Poly, scale: number): Poly => ({ pts: poly.pts.map((p) => toPx(scale, p)), closed: poly.closed });
+  const centred = (scale: number): Pt => ({ x: room.x + room.width / 2 - centreX * scale, y: room.y + room.height / 2 - centreY * scale });
+  const toPx = (scale: number, p: Pt, offset: Pt = centred(scale)): Pt => ({ x: p.x * scale + offset.x, y: p.y * scale + offset.y });
+  const pxPoly = (poly: Poly, scale: number, offset: Pt = centred(scale)): Poly => ({ pts: poly.pts.map((p) => toPx(scale, p, offset)), closed: poly.closed });
   const fitScale = (share: number): number => Math.min((share * room.width) / Math.max(1e-6, sub.width), (share * room.height) / Math.max(1e-6, sub.height));
 
   const sizesFor = (text: string, labelPx: number): { w: number; h: number }[] => {
@@ -301,25 +314,42 @@ export function layoutFigure(input: FigureInput, held: { readonly step: number }
   for (let s = labelPx0; s >= env.floor; s -= s > 18 ? 2 : 1) ladder.push(s);
   if (ladder[ladder.length - 1] !== env.floor) ladder.push(env.floor);
 
+  // one try at a scale, a place and a label size: where the labels would stand, and whether they stand clear
+  const attempt = (scale: number, share: number, labelPx: number, offset: Pt): { readonly tried: Fit; readonly subject: Rect } => {
+    const corner = toPx(scale, { x: sub.x, y: sub.y }, offset);
+    const subject: Rect = { x: corner.x, y: corner.y, width: sub.width * scale, height: sub.height * scale };
+    const pxParts = new Map(placed.map((p) => [p.part.id, pxPoly(p.poly, scale, offset)]));
+    const labels: BoundaryLabel[] = active.map((p) => ({
+      key: p.part.id,
+      sizes: sizesFor(p.part.label as string, labelPx),
+      poly: pxParts.get(p.part.id) as Poly,
+      // what is drawn after it and closed, and what it holds: its anchor keeps out of them, so its leader ends on IT
+      covers: placed.filter((q) => q !== p && q.poly.closed && (q.index > p.index || q.parent === p.part.id)).map((q) => (pxParts.get(q.part.id) as Poly).pts),
+    }));
+    const result = placeBoundary({ labels, figure: subject, room, gap: Math.max(8, labelPx * 0.8), sep: Math.max(3, labelPx * 0.3), sepX: Math.max(14, labelPx * 1.2) });
+    return { tried: { scale, offset, share, labelPx, placed: result.placed, bad: result.bad, crossings: result.crossings }, subject };
+  };
+
   let fit: Fit | null = null;
   for (let guard = 0; guard < 16 && fit === null; guard += 1) {
+    // the figure as it stood a turn ago, when it is still being gone on with: the same scale in the same place, if every label still has its room there
+    if (keep !== undefined) {
+      for (const labelPx of ladder) {
+        const { tried, subject } = attempt(keep.scale, Math.max((sub.width * keep.scale) / room.width, (sub.height * keep.scale) / room.height), labelPx, keep.offset);
+        const inside = subject.x >= room.x - 0.5 && subject.y >= room.y - 0.5 && subject.x + subject.width <= room.x + room.width + 0.5 && subject.y + subject.height <= room.y + room.height + 0.5;
+        if (inside && tried.bad.length === 0 && tried.crossings === 0) {
+          fit = tried;
+          break;
+        }
+      }
+      if (fit !== null) break;
+    }
     let best: Fit | null = null;
     outer: for (const labelPx of ladder) {
       for (const share of SHARES) {
         const scale = fitScale(share);
-        const corner = toPx(scale, { x: sub.x, y: sub.y });
-        const subject: Rect = { x: corner.x, y: corner.y, width: sub.width * scale, height: sub.height * scale };
-        const pxParts = new Map(placed.map((p) => [p.part.id, pxPoly(p.poly, scale)]));
-        const labels: BoundaryLabel[] = active.map((p) => ({
-          key: p.part.id,
-          sizes: sizesFor(p.part.label as string, labelPx),
-          poly: pxParts.get(p.part.id) as Poly,
-          // what is drawn after it and closed, and what it holds: its anchor keeps out of them, so its leader ends on IT
-          covers: placed.filter((q) => q !== p && q.poly.closed && (q.index > p.index || q.parent === p.part.id)).map((q) => (pxParts.get(q.part.id) as Poly).pts),
-        }));
-        const result = placeBoundary({ labels, figure: subject, room, gap: Math.max(8, labelPx * 0.8), sep: Math.max(3, labelPx * 0.3), sepX: Math.max(14, labelPx * 1.2) });
-        const tried: Fit = { scale, share, labelPx, placed: result.placed, bad: result.bad, crossings: result.crossings };
-        if (result.bad.length === 0 && result.crossings === 0) {
+        const { tried } = attempt(scale, share, labelPx, centred(scale));
+        if (tried.bad.length === 0 && tried.crossings === 0) {
           fit = tried;
           break outer;
         }
@@ -328,7 +358,7 @@ export function layoutFigure(input: FigureInput, held: { readonly step: number }
     }
     if (fit !== null) break;
     if (active.length === 0) {
-      fit = { scale: fitScale(SHARES[0] as number), share: SHARES[0] as number, labelPx: labelPx0, placed: new Map(), bad: [], crossings: 0 };
+      fit = { scale: fitScale(SHARES[0] as number), offset: centred(fitScale(SHARES[0] as number)), share: SHARES[0] as number, labelPx: labelPx0, placed: new Map(), bad: [], crossings: 0 };
       break;
     }
     // it will not fit: an optional label that is in the way goes first, then any optional, then one that is in the way, then the last
@@ -336,12 +366,12 @@ export function layoutFigure(input: FigureInput, held: { readonly step: number }
     const victim = lastOf(active.filter((p) => p.part.optional === true && bad.has(p.part.id))) ?? lastOf(active.filter((p) => p.part.optional === true)) ?? lastOf(active.filter((p) => bad.has(p.part.id))) ?? (lastOf(active) as Resolved);
     drop(victim, 'no room for it beside the figure');
   }
-  const settled = fit ?? { scale: fitScale(SHARES[SHARES.length - 1] as number), share: SHARES[SHARES.length - 1] as number, labelPx: labelPx0, placed: new Map<string, PlacedLabel>(), bad: [], crossings: 0 };
+  const settled = fit ?? { scale: fitScale(SHARES[SHARES.length - 1] as number), offset: centred(fitScale(SHARES[SHARES.length - 1] as number)), share: SHARES[SHARES.length - 1] as number, labelPx: labelPx0, placed: new Map<string, PlacedLabel>(), bad: [], crossings: 0 };
   if (settled.labelPx < labelPx0 && active.length > 0) notes.push({ kind: 'label-crowded', part: '', detail: `label type was set at ${settled.labelPx}px to fit (${labelPx0}px asked)` });
 
   // the parts and routes, in px
   const laid: LaidPart[] = placed.map((p) => {
-    const poly = pxPoly(p.poly, settled.scale);
+    const poly = pxPoly(p.poly, settled.scale, settled.offset);
     const hue = p.poly.closed ? p.part.fill : (p.part.stroke ?? p.part.fill);
     const holds = placed.some((q) => q.parent === p.part.id);
     return {
@@ -375,7 +405,7 @@ export function layoutFigure(input: FigureInput, held: { readonly step: number }
     }
   }
 
-  const guide = exploded.guide === null ? null : { from: toPx(settled.scale, exploded.guide.from), to: toPx(settled.scale, exploded.guide.to) };
+  const guide = exploded.guide === null ? null : { from: toPx(settled.scale, exploded.guide.from, settled.offset), to: toPx(settled.scale, exploded.guide.to, settled.offset) };
   const subject = unionOf([...laid.map((p) => bounds(p.poly.pts)), ...(guide === null ? [] : [bounds([guide.from, guide.to])])]);
-  return { id: input.id, size: { width: W, height: H }, input, step, scale: settled.scale, subject, stage, parts: laid, labels, dropped, routes, guide, chrome, lit, notes, labelPx: settled.labelPx, share: settled.share, look: env.look };
+  return { id: input.id, size: { width: W, height: H }, input, step, scale: settled.scale, offset: settled.offset, subject, stage, parts: laid, labels, dropped, routes, guide, chrome, lit, notes, labelPx: settled.labelPx, share: settled.share, look: env.look };
 }

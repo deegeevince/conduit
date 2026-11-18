@@ -440,6 +440,7 @@ function stage(value: unknown): StageBase {
         struck: bool(element.struck, `${what}.struck`),
         replaces: link('replaces'),
         ...(element.placed === undefined || element.placed === null ? {} : { placed: canvasBox(element.placed, `${what}.placed`) }),
+        ...(element.held === undefined || element.held === null ? {} : { held: figureHold(element.held, `${what}.held`) }),
         ...(element.driven === undefined || element.driven === null ? {} : { driven: driven(element.driven, `${what}.driven`) }),
       };
     }),
@@ -448,6 +449,22 @@ function stage(value: unknown): StageBase {
 
 const SIGHT_NOTES = Object.keys(SIGHT_NOTE) as SightNote[];
 const SIGHT_ID_CHARS = 80;
+
+/** How a labelled drawing rested at the end of the turn that drew it (`FigureHold`): numbers only, kept so the next turn of the scene can leave it where it was. */
+function figureHold(value: unknown, what: string): NonNullable<StageBase['elements'][number]['held']> {
+  const hold = obj(value, what);
+  const room = obj(hold.room, `${what}.room`);
+  const view = obj(hold.view, `${what}.view`);
+  const size = obj(hold.size, `${what}.size`);
+  const offset = obj(hold.offset, `${what}.offset`);
+  return {
+    room: { x: num(room.x, `${what}.room.x`), y: num(room.y, `${what}.room.y`), width: num(room.width, `${what}.room.width`), height: num(room.height, `${what}.room.height`) },
+    view: { width: num(view.width, `${what}.view.width`), height: num(view.height, `${what}.view.height`) },
+    size: { width: num(size.width, `${what}.size.width`), height: num(size.height, `${what}.size.height`) },
+    scale: num(hold.scale, `${what}.scale`),
+    offset: { x: num(offset.x, `${what}.offset.x`), y: num(offset.y, `${what}.offset.y`) },
+  };
+}
 
 function canvasBox(value: unknown, what: string): CanvasBox {
   const box = obj(value, what);

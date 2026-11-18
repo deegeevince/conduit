@@ -167,6 +167,16 @@ export interface PointerInput {
 }
 
 /** Where a label's leader line ends and how that end stands to the parts that have labels, as the catalogue and the test hook read it. */
+/** One frame of a figure at an instant of a turn: its key, the id of the part, route or label it belongs to, and how much of it is shown. */
+export interface FigureFrameView {
+  readonly key: string;
+  readonly id: string;
+  readonly kind: 'shape' | 'text';
+  readonly opacity: number;
+  /** a shape's stroke drawn so far, 0..1 (1 when it has no stroke); a label's words shown so far, 0..1 */
+  readonly progress: number;
+}
+
 export interface LeaderView {
   /** the label's id */
   readonly label: string;
@@ -526,6 +536,12 @@ export interface Painter {
 
   /** For a test: leaves the elements with these keys undrawn (none: all drawn again) and draws the frame now, so a picture taken with and without an element shows what it really paints. A figure has a key too (a callout's leader is `<its key>/leader`). Returns which of the keys the frame held. */
   hide(keys: readonly string[]): readonly string[];
+
+  /**
+   * For a test: the frames of a figure's parts, routes and labels as drawn `seconds` into the turn on stage (the last turn, or the open one): which, and how much of each is shown
+   * (`opacity`; `progress`, the share of its outline's stroke drawn, 1 when it has none; `reveal`, the share of a label's words). What a change to a figure looks like frame by frame.
+   */
+  figureFrames(seconds: number): readonly FigureFrameView[];
 
   /** The leader lines on stage as they rest: where each ends and how that end stands to its own part and to the other labelled parts (what the catalogue's label check reads). */
   leaders(): readonly LeaderView[];
