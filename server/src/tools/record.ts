@@ -1,4 +1,4 @@
-// pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--css 1280x720] [--scale 1.5] [--legacy] [--fps 60] [--timeout 1200]
+// pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--css 1280x720] [--scale 1.5] [--legacy] [--ports 4883-4889] [--fps 60] [--timeout 1200]
 //
 // Films a journey (web/src/app/journey.ts) on a running server: Chrome plays `/?journey=<name>` and its screen is captured with the DevTools screencast, every
 // frame kept with its own timestamp. The film is `--size` (1920x1080). The page is laid out in `--css` CSS pixels and rendered at `--scale` device pixels to a CSS
@@ -41,7 +41,7 @@ interface Args extends RecordView {
 }
 
 function usage(message: string): never {
-  process.stderr.write(`record: ${message}\nusage: pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--css 1280x720] [--scale 1.5] [--legacy] [--fps 60] [--timeout <seconds>]\n`);
+  process.stderr.write(`record: ${message}\nusage: pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--css 1280x720] [--scale 1.5] [--legacy] [--ports 4883-4889] [--fps 60] [--timeout <seconds>]\n`);
   process.exit(2);
 }
 
@@ -56,11 +56,17 @@ function parseArgs(argv: readonly string[]): Args {
       flags.set(name, 'true');
       continue;
     }
-    if (!['url', 'journey', 'out', 'size', 'css', 'scale', 'fps', 'timeout'].includes(name)) usage(`unknown flag ${arg}`);
+    if (!['url', 'journey', 'out', 'size', 'css', 'scale', 'fps', 'timeout', 'ports'].includes(name)) usage(`unknown flag ${arg}`);
     const value = argv[i + 1];
     if (value === undefined) usage(`--${name} needs a value`);
     flags.set(name, value);
     i += 1;
+  }
+  // `--ports a-b` is `CHECK_PORTS=a-b` for the recorder's own Chrome (a machine that keeps its other ports for other things)
+  const ports = flags.get('ports');
+  if (ports !== undefined) {
+    if (!/^\d+-\d+$/.test(ports)) usage('--ports is like 4883-4889');
+    process.env['CHECK_PORTS'] = ports;
   }
   const url = flags.get('url');
   const journey = flags.get('journey');
