@@ -1105,8 +1105,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const offNote = link.onNote(noteTurnFailure);
   const offClock = painter.on('clock', publishStatus);
   const offUpload = painter.on('upload', (upload) => {
-    // A picture of a page the app played for itself is of no use to the server, which never heard of that turn.
-    if (upload.kind !== 'sketch' && upload.turn.startsWith(PAGE_PREFIX)) return;
+    // A picture of a page the app played for itself, or of the first-load welcome it performs from its own fixture, is of no use to the server, which never heard of that turn
+    // (it answered 404 to the welcome's snapshot, and the stage was rasterised for nothing). The sketches are the exception: they are kept under the session, not under a turn.
+    if (upload.kind !== 'sketch' && (upload.turn === LOCAL_TURN || upload.turn.startsWith(PAGE_PREFIX))) return;
     link.upload(upload);
   });
 

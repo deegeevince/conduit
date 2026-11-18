@@ -18,6 +18,12 @@
 //   ask                (tablet 1180x820 at two pixels, touch, the lens off and on) a finger tap on an ask's blank focuses its input, also under the Draw layer after a pen stroke;
 //                      a short pen tap too, a pen drag writes; `fill` puts a wrong or right answer in the blank and opens the next stage; Send drawing names the ask (ask-check.ts)
 //   tour               (`/demo`; 1280x800, 820x971, 390x844) the tour opens on the stage, a chapter lists its cards, a card plays its demo with no model call, "Back to the tour" returns, `/demo <name>` jumps to one (tour-check.ts)
+//   fb-021             the owner's phone showed the stage black (Android 10, Chrome 157, 718x626 at three pixels): the first minute at that size (first load, Stop, Draw, a stroke) is played in
+//                      Chrome with an Android user agent and in WebKit (the `webkit` group's fb021 scene, iPhone sizes), as the device does and with a low-latency canvas painted black and every GL
+//                      read zero: the stage's corners and centre stay lit, no ink layer is on screen before Draw, its canvases are transparent, the picture sent is lit, and the first-load welcome's
+//                      turn is never asked of the server (black-check.ts)
+//   webkit             Playwright's WebKit at an iPhone in landscape, an iPhone upright and an iPad (welcome, scripts, Draw, fb-021, ask: webkit-check.ts); not part of a run unless asked
+//                      for (`--webkit`, or `--only webkit`), and skipped with a message when that browser is not installed
 //   fb-055             a label the brain drew (`say callout near=x`, a figure part's `label=`) is tapped to ask about what it names: one act that names the part, none for a drag, a click on
 //                      the drawn part or on plain words; with a mouse and a finger; the journey's `tap | Brakes` finds "brake disc" (label-check.ts)
 //   fb-064             the Undo chip puts the answer before back whole: the car's labels (and a click on one asks about it), its words and its choice, and nothing of the answer it
@@ -64,6 +70,7 @@ import { showcaseReelGroup } from './showcase-reel';
 import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
 import { ASK_SCREEN, askGroup } from './ask-check';
+import { BLACK_SCREEN, blackGroup } from './black-check';
 import { DRAW_SCREEN, drawGroup } from './draw-check';
 import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
@@ -320,9 +327,6 @@ interface ScreenRun {
   readonly aborted: string | null;
 }
 
-/** the first-load demo's snapshot upload, addressed to its local turn id */
-const KNOWN_FAILURE = /\/turns\/local-first-load\/snapshot answered 404/;
-
 const ANY: Step = { n: 1, say: null, name: 'check', expects: 'any' };
 
 interface Stage {
@@ -451,11 +455,11 @@ class Screen {
     }
     this.feet = options.footprints === true ? await footprintJudge(tab, add, { scale: tab.dpr, spots }) : new Map();
     const drained = tab.drain();
-    // KNOWN: the page uploads the stage's snapshot for the first-load demo under its local turn id, which the server does not know (404). Harmless, and said in the detail.
-    const known = drained.failedRequests.filter((entry) => KNOWN_FAILURE.test(entry.text));
-    const logged = { consoleErrors: drained.consoleErrors.filter((entry) => !(known.length > 0 && /404/.test(entry.text) && /Failed to load resource/.test(entry.text))), failedRequests: drained.failedRequests.filter((entry) => !KNOWN_FAILURE.test(entry.text)) };
+    // (fb-021: the page used to upload the stage's snapshot for the first-load welcome under its local turn id, which the server does not know, and was let off for the 404. It no
+    // longer sends one, so a failed request is a failed request.)
+    const logged = drained;
     talk.add(results, 'no-console-errors', logged.consoleErrors.length === 0 ? 'PASS' : 'FAIL', logged.consoleErrors.length === 0 ? 'nothing logged as an error' : `${logged.consoleErrors.length}: ${[...new Set(logged.consoleErrors.map((entry) => entry.text))].slice(0, 3).join(' | ')}`);
-    talk.add(results, 'no-failed-requests', logged.failedRequests.length === 0 ? 'PASS' : 'FAIL', logged.failedRequests.length === 0 ? `every request answered${known.length > 0 ? ' (the first-load snapshot upload answered 404: known, ignored)' : ''}` : `${logged.failedRequests.length}: ${[...new Set(logged.failedRequests.map((entry) => entry.text))].slice(0, 3).join(' | ')}`);
+    talk.add(results, 'no-failed-requests', logged.failedRequests.length === 0 ? 'PASS' : 'FAIL', logged.failedRequests.length === 0 ? 'every request answered' : `${logged.failedRequests.length}: ${[...new Set(logged.failedRequests.map((entry) => entry.text))].slice(0, 3).join(' | ')}`);
     const scene: Scene = { name, seconds: (Date.now() - began) / 1000, picture: file, results };
     this.scenes.push(scene);
     for (const result of results) if (result.verdict === 'FAIL') this.note(`  FAIL ${name} ${result.check}: ${result.detail.slice(0, 200)}`);
@@ -1751,22 +1755,6 @@ function table(run: ScreenRun): string {
   return lines.join('\n');
 }
 
-async function webkitHook(base: string, out: string, timeoutMs: number, quiet: boolean): Promise<number> {
-  const missing = webkitMissing();
-  if (missing !== null) {
-    process.stdout.write(`\nwebkit: SKIPPED, ${missing}\n`);
-    return 0;
-  }
-  try {
-    const scenes = await webkitGroup(base, join(out, 'webkit'), timeoutMs, (text) => (quiet ? undefined : process.stdout.write(`[${text}]\n`)));
-    process.stdout.write('\nwebkit (iPhone landscape, iPhone, iPad)\n');
-    return printWebkit(scenes, (text) => process.stdout.write(text));
-  } catch (error) {
-    process.stdout.write(`  FAIL webkit stopped: ${error instanceof Error ? error.message : String(error)}\n`);
-    return 1;
-  }
-}
-
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The groups, and how they are run
 
@@ -1873,6 +1861,32 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       out.json = { key: 'asks', value: { screen: ASK_SCREEN.name, scenes } };
     },
   });
+  units.push({
+    name: 'fb-021',
+    needs: 'main',
+    weight: 70,
+    run: async (servers, out) => {
+      out.lines.push(`\nfb-021 ${BLACK_SCREEN.name} (dpr ${BLACK_SCREEN.dpr}, touch, an Android user agent): first load, Stop, Draw, a stroke; as the device does and with a low-latency canvas painted black and every GL read zero`);
+      sceneLines(out, await blackGroup(servers.main as string, BLACK_SCREEN, join(args.out, 'fb-021'), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[fb-021] ${text}\n`))));
+    },
+  });
+  // WebKit (Playwright): `--only webkit` runs all of its scenes, `--only fb-021` the one for this row, and `--webkit` adds it to a run. It skips with a message when the browser is not installed.
+  const webkitScenes = (picked: readonly ('welcome' | 'scripts' | 'draw' | 'fb021' | 'ask')[]) => async (servers: Readonly<Record<Needs, string | null>>, out: Output): Promise<void> => {
+    const missing = webkitMissing();
+    if (missing !== null) return void out.lines.push(`\nwebkit: SKIPPED, ${missing}`);
+    try {
+      const scenes = await webkitGroup(servers.main as string, join(args.out, 'webkit'), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[${text}]\n`)), undefined, picked);
+      out.lines.push(`\nwebkit ${picked.join(', ')} (iPhone landscape, iPhone, iPad)`);
+      out.failures += printWebkit(scenes, (text) => out.lines.push(text.replace(/\n$/, '')));
+    } catch (error) {
+      out.failures += 1;
+      out.lines.push(`  FAIL webkit stopped: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  units.push({ name: 'fb-021', needs: 'main', weight: 40, run: webkitScenes(['fb021']) });
+  // the whole of it unless `--only` is naming fb-021's row too (that one runs the same scene on its own)
+  const rowWanted = args.only !== null && args.only.some((wanted) => 'fb-021'.startsWith(wanted));
+  units.push({ name: 'webkit', needs: 'main', weight: 100, run: webkitScenes(rowWanted ? ['welcome', 'scripts', 'draw', 'ask'] : ['welcome', 'scripts', 'draw', 'fb021', 'ask']) });
   ['', 'lens=1'].forEach((page, index) =>
     units.push({
       name: 'draw',
@@ -2184,7 +2198,9 @@ async function main(): Promise<void> {
     process.stdout.write('\n--only takes these, comma-separated, or the start of a name (demo = every demo, welcome = both welcomes, choice = the welcome); try: pnpm check --only art-maker,memory\n');
     process.exit(0);
   }
-  const chosen = args.only === null ? units : units.filter((unit) => args.only?.some((wanted) => picks(unit, wanted)));
+  // the WebKit unit is part of a run only when asked for (`--webkit`, or `--only webkit`): it needs a browser that is not installed everywhere
+  const chosen = (args.only === null ? units : units.filter((unit) => args.only?.some((wanted) => picks(unit, wanted)))).filter((unit) => !(unit.name === 'webkit' && args.only === null && !args.webkit));
+  if (args.only !== null && args.webkit && !chosen.some((unit) => unit.name === 'webkit')) chosen.push(units.find((unit) => unit.name === 'webkit') as Unit);
   for (const wanted of args.only ?? []) if (!units.some((unit) => picks(unit, wanted))) usage(`no group called "${wanted}"; the groups are ${names.join(', ')}`);
   if (chosen.some((unit) => unit.needs !== 'none') && !CHROME_CANDIDATES.some((path) => existsSync(path))) usage('no Chrome found: set CHROME_BIN to a Chrome or Chromium executable');
   await mkdir(args.out, { recursive: true });
@@ -2327,8 +2343,6 @@ async function main(): Promise<void> {
       failures += out.failures;
       if (out.json !== undefined) json[out.json.key].push(out.json.value);
     }
-    // the WebKit group (--webkit): the bugs only Safari had, in Playwright's WebKit (webkit-check.ts); skipped with a message when that browser is not installed
-    if (args.webkit) failures += await webkitHook(base, args.out, args.timeoutMs, args.quiet);
     await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, ...json }, null, 2));
   } catch (error) {
     failures += 1;
