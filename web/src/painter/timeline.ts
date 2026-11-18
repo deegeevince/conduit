@@ -2407,7 +2407,14 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       let fy0 = Number.POSITIVE_INFINITY;
       let fx1 = Number.NEGATIVE_INFINITY;
       let fy1 = Number.NEGATIVE_INFINITY;
-      for (const rect of [...obstacles.filter((o) => !backdrop(o.owner)).map((o) => o.rect), ...callouts.map((c) => c.target)]) {
+      // (fb-081: a photo the user gave is part of the drawing the labels are about, so they stand round its frame and not on it)
+      const photos: Rect[] = [];
+      for (const element of drawn) {
+        if (element.figure?.kind !== 'picture' || element.figure.from == null || !isLiveAt(element, tq)) continue;
+        const at = canvasBoxOf(element, schedule, tq);
+        if (at !== null) photos.push(toScreenRect(at, fitOfElement(element, look, tq)));
+      }
+      for (const rect of [...obstacles.filter((o) => !backdrop(o.owner)).map((o) => o.rect), ...callouts.map((c) => c.target), ...photos]) {
         fx0 = Math.min(fx0, rect.x);
         fy0 = Math.min(fy0, rect.y);
         fx1 = Math.max(fx1, rect.x + rect.w);
