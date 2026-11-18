@@ -195,6 +195,69 @@ export async function checkAxisTags(tab: Tab): Promise<string[]> {
   return problems.slice(0, 4);
 }
 
+/**
+ * fb-006. The language view is switched on and off five times in quick succession (the real menu entry, "Show the language", is pressed from inside the page), and one more time if that
+ * leaves it off. After every press the line over the stage's lower edge (the status pill) must be centred on the stage's column as the press leaves the page: a microtask after the click,
+ * in the next task (where a DevTools call, a timer or an event handler looks, with no frame between), once a frame has been drawn, and 300 ms after the press. The stage is also checked to have moved
+ * (with the pane on and room for it beside the stage, the stage's left edge is past the pane's). The line must be up throughout: it is while a demo plays.
+ * Nothing waits for a frame before looking, and nothing is tried again: a pill that is placed by a frame's observer alone fails the first two looks every time.
+ */
+export async function checkPillThroughToggles(tab: Tab, presses = 5): Promise<string[]> {
+  type Look = { up: boolean; lang: boolean; left: number; centre: number; middle: number };
+  type Press = { n: number; from: boolean; to: boolean; wide: boolean; probes: Record<string, Look> };
+  const done = await tab.eval<{ error?: string; presses?: Press[] }>(`(async () => {
+    const app = document.getElementById('app');
+    const item = document.querySelector('[data-item="lines"]');
+    if (!app || !item) return { error: 'the menu has no "Show the language" entry to press' };
+    const later = (ms) => new Promise((r) => setTimeout(r, ms));
+    const frame = () => new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 250); });
+    const look = () => {
+      const s = document.getElementById('stage').getBoundingClientRect();
+      const t = document.querySelector('.prompt__top');
+      const lang = app.dataset.lang === 'on';
+      const up = !!t && !t.hidden && t.offsetParent !== null && t.getBoundingClientRect().width > 0;
+      const r = up ? t.getBoundingClientRect() : null;
+      return { up, lang, left: s.left, centre: r ? r.left + r.width / 2 : 0, middle: s.left + s.width / 2 };
+    };
+    const rows = [];
+    const settling = [];
+    const press = async (n) => {
+      const from = app.dataset.lang === 'on';
+      item.click();
+      const row = { n, from, to: app.dataset.lang === 'on', wide: innerWidth > 720, probes: {} };
+      rows.push(row);
+      settling.push(later(300).then(() => { row.probes.settled = look(); }));
+      await Promise.resolve();
+      row.probes.microtask = look();
+      await later(0);
+      row.probes.task = look();
+      await frame();
+      await frame();
+      row.probes.frame = look();
+    };
+    for (let n = 1; n <= ${presses}; n += 1) {
+      await press(n);
+      await later(40);
+    }
+    if (app.dataset.lang !== 'on') await press(${presses + 1});
+    await Promise.all(settling);
+    return { presses: rows };
+  })()`);
+  if (done.error !== undefined) return [done.error];
+  const problems: string[] = [];
+  const when: Record<string, string> = { microtask: 'a microtask after the press', task: 'in the next task', frame: 'once a frame had been drawn', settled: '300 ms after the press' };
+  for (const press of done.presses ?? []) {
+    const what = `press ${press.n} (${press.to ? 'opening' : 'closing'} the language view)`;
+    if (press.to === press.from) problems.push(`${what}: the menu entry did not switch the language view`);
+    for (const [name, look] of Object.entries(press.probes)) {
+      if (press.wide && name === 'microtask' && (look.lang ? look.left <= 0 : look.left !== 0)) problems.push(`${what}: the stage's left edge is ${Math.round(look.left)} with the pane ${look.lang ? 'on' : 'off'}`);
+      if (!look.up) problems.push(`${what}, ${when[name]}: the line over the stage was not up`);
+      else if (Math.abs(look.centre - look.middle) > 2) problems.push(`${what}, ${when[name]}: the status pill is centred at ${Math.round(look.centre)}, the stage's middle is ${Math.round(look.middle)}`);
+    }
+  }
+  return problems.slice(0, 4);
+}
+
 /** fb-006. The line over the stage's lower edge (the status pill) is centred on the stage's column, and is one line. Nothing to check while it is not shown. */
 export async function checkPill(tab: Tab): Promise<string[]> {
   const stage = await hostBox(tab);
