@@ -221,6 +221,35 @@ row fixblank | </script>
 say c1 | An app that draws nothing.
 wait 1
 
+# fb-026: the world's land, real. An app that draws `World.land` (the shelf's Natural Earth outlines) with D3 must draw land, and in the right place. It names `uses=maps,charts`, and turns the
+# globe to centre on 30E 10N, so that Africa is not the middle pixel: the check reads the screenshot (literal colours: land #e8b84a over sea #1b4f9c, nothing else in either).
+scene fb-026 layout=caption
+app earth height=330 uses=maps,charts | The Earth, drawn from World.land
+row earth | <style>body { margin: 0; overflow: hidden; background: #f4f1ea; } svg { display: block; width: 100vw; height: 100vh; }</style>
+row earth | <svg id="s"></svg>
+row earth | <script>
+row earth | var w = innerWidth, h = innerHeight, svg = d3.select('#s');
+row earth | var proj = d3.geoOrthographic().scale(Math.min(w, h) * 0.45).translate([w / 2, h / 2]).rotate([-30, -10]);
+row earth | var path = d3.geoPath(proj);
+row earth | svg.append('path').datum({ type: 'Sphere' }).attr('d', path).attr('fill', '#1b4f9c');
+row earth | svg.append('path').datum(World.land).attr('d', path).attr('fill', '#e8b84a');
+row earth | </script>
+say c1 | The Earth, from the shelf's land.
+wait 1
+
+# fb-026, the other way in: an app that never says `uses=` and reaches for `World.land`. The land is loaded for it anyway (the log holds a `uses-inferred` warning for it), whole and frozen:
+# the page shows its land-coloured block only if `World.land` is a MultiPolygon of over a hundred polygons and cannot be changed. No D3 here, so the page stays light.
+scene fb-026-inferred layout=caption brisk
+app world height=120 | The land is there, and frozen
+row world | <style>body { margin: 0; background: #1b4f9c; } #d { width: 50vw; height: 60vh; margin: 20vh auto; background: #e8b84a; }</style>
+row world | <div id="d"></div>
+row world | <script>
+row world | var ok = World.land.type === 'MultiPolygon' && World.land.coordinates.length > 100 && Object.isFrozen(World.land);
+row world | if (!ok) document.getElementById('d').remove();
+row world | </script>
+say c1 | The land arrived without being asked for.
+wait 1
+
 # a photo with callouts at spots. The check puts a generated test pattern up as u1 (900 by 600) and, as the server does for a photo a turn carries, the shape is stamped: aspect=1.5
 
 scene photo layout=figure canvas=wide

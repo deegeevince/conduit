@@ -675,12 +675,13 @@ export const APP_HEIGHT = { min: 120, max: 1200, default: 480 } as const;
 /**
  * v2.1. The vetted library shelf a live app may ask for (`app … uses=physics,sound`). The host puts the library in the app's own document,
  * because the sandbox has no network: `physics` is matter.js (global `Matter`), `sound` Tone.js (`Tone`), `maths` KaTeX (`katex`, its stylesheet
- * included) and `charts`/`graphs` D3 (`d3`; both words name the one library). Other words are said back as a mistake and ignored.
+ * included) and `charts`/`graphs` D3 (`d3`; both words name the one library). `maps` is not a library but the world's land outlines (Natural Earth, 1:110m)
+ * as the global `World` (`World.land`, a GeoJSON MultiPolygon). Other words are said back as a mistake and ignored.
  */
-export const APP_SHELVES = ['physics', 'sound', 'maths', 'charts', 'graphs', 'fonts'] as const;
+export const APP_SHELVES = ['physics', 'sound', 'maths', 'charts', 'graphs', 'fonts', 'maps'] as const;
 export type AppShelf = (typeof APP_SHELVES)[number];
 /** Words a brain says for a shelf that are not its name. */
-export const APP_SHELF_ALIASES: Readonly<Record<string, AppShelf>> = { math: 'maths', matter: 'physics', music: 'sound', tone: 'sound', katex: 'maths', chart: 'charts', graph: 'graphs', d3: 'charts' };
+export const APP_SHELF_ALIASES: Readonly<Record<string, AppShelf>> = { math: 'maths', matter: 'physics', music: 'sound', tone: 'sound', katex: 'maths', chart: 'charts', graph: 'graphs', d3: 'charts', map: 'maps', world: 'maps' };
 
 /** Which way a flow or a tree grows. */
 export const GROWTH = { right: 'left to right', down: 'top to bottom' } as const;
