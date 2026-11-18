@@ -173,7 +173,7 @@ async function take(outDir: string, options: TakeOptions): Promise<void> {
     let failures = 0;
     const jobs: { turn: (typeof GOLDEN_TURNS)[number]; screen: string }[] = [];
     for (const turn of GOLDEN_TURNS.filter((candidate) => options.only === null || options.only.includes(candidate.id))) {
-      if (!existsSync(join(goldenRoot, 'logs', turn.log))) usage(`fixture missing: ${join(goldenRoot, 'logs', turn.log)}`);
+      if (!existsSync(join(goldenRoot, 'logs', turn.log))) usage(`fixture missing: ${join(goldenRoot, 'logs', turn.log)} (the golden logs are the owner's own sessions and are not published: copy a session log of yours there and name its turns in golden-turns.ts)`);
       for (const screen of options.screens) jobs.push({ turn, screen });
     }
     // One capture at a time by default; `GOLDEN_JOBS=n` runs n at once, each with a Chrome of its own on its own port.

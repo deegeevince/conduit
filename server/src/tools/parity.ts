@@ -45,9 +45,12 @@ async function goldenCases(): Promise<EngineCase[]> {
   const cases: EngineCase[] = [];
   const logs = new Map<string, SessionRecord[]>();
   for (const golden of GOLDEN_TURNS) {
+    // The logs these turns come from are the owner's own sessions and are not published: without one, its turns are left out.
+    const logFile = join(repoRoot, 'server', 'golden', 'logs', golden.log);
+    if (!existsSync(logFile)) continue;
     if (!logs.has(golden.log)) {
       const records: SessionRecord[] = [];
-      for (const raw of (await readFile(join(repoRoot, 'server', 'golden', 'logs', golden.log), 'utf8')).split('\n')) {
+      for (const raw of (await readFile(logFile, 'utf8')).split('\n')) {
         try {
           const record = JSON.parse(raw) as SessionRecord;
           if (typeof record.type === 'string') records.push(record);

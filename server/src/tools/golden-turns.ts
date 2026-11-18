@@ -3,6 +3,9 @@
 // Each one names a fixture log under `server/golden/logs/` (copies of the owner's session logs, whole, so a turn's base is what the
 // turns before it left) and a turn in it. `covers` says what the turn is there to catch; a refactor that changes any of them changes
 // bytes. To add a turn: copy its log into `server/golden/logs/`, add a line here, and take a new baseline.
+//
+// The logs are the owner's own sessions, so they are not published (`server/golden/logs/` is git-ignored): the turns below name the
+// files the owner's copy holds, `pnpm parity` leaves out any turn whose log is absent, and `pnpm golden take` asks for the fixture.
 
 export interface GoldenTurn {
   /** the name its artefacts carry in the manifest */
