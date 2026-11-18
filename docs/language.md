@@ -245,7 +245,7 @@ hit  <id> [gesture] [@time]
 ```
 
 - `set` changes live elements of any kind: named styles and properties are applied on top of what they have, and the painter moves smoothly from old to new (colour, size, place, turn, scale, opacity, layer). It takes the short set length unless a speed word or `over=` says otherwise. `stay=pin` pins; `stay=beat` or `stay=Ns` schedules a departure.
-- `move` sends an element's centre to a place. With `along=` it travels along a drawn shape's outline, by length, and stops where the outline ends unless a destination is given.
+- `move` sends an element's centre to a place. With `along=` it travels along a drawn shape's outline, by length, from the place it was drawn at (the nearest point of the outline), and stops where the outline ends unless a destination is given. On a closed outline (a circle, an ellipse) one whole move, or one whole range of a bound control, is one lap, clockwise, from where it was drawn back to it: a thing drawn at 3 o'clock is at 9 o'clock half way, the way a ride with `period=` goes round from its drawing.
 - `drop` makes elements leave now, with `exit=` or their own exit. It takes several ids (`drop a1 a2 a3`); `set` moves an element and refuses to resize it.
 - `hit` performs one gesture on one element and then is over.
 - The target `scene` means every live element of the open scene; `all` means every live element.

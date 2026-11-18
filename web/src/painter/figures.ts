@@ -7,7 +7,7 @@
 // canvas units, from the schedule alone (`canvasBoxOf` stops here). The second
 // puts the look's colour, stroke and motion on it and maps it to the stage.
 
-import { boundsOf, CANVAS, describeFigure, LOOP_DEFAULT, pointAlong, resample, ROW_SECONDS, sceneAt, valueAt } from '@conduit/language';
+import { boundsOf, CANVAS, describeFigure, LOOP_DEFAULT, pointAlong, resample, rideShare, ROW_SECONDS, sceneAt, valueAt } from '@conduit/language';
 import type { Anchor, ElementChange, ElementSpan, ElementStyle, Fill, Figure, Layer, Paint, Polyline, Schedule, SceneSpan, ShapeGeometry, SpriteData, StageBase, StrokeCharacter } from '@conduit/language';
 import type { Affine, Colour, FieldFrame, FigureFrame, FillFrame, PictureFrame, ShapeFrame, SpriteFrame, StrokeFrame } from '../contracts/frame';
 import { IDENTITY } from '../contracts/frame';
@@ -399,7 +399,10 @@ function centreOf(element: ElementSpan, trans: Trans, natural: Pt, sc: Scn): Pt 
         first = nearestShare(line, a);
         startShares.set(move, first);
       }
-      const here = pointAlong(line, lerp(first, 1, trans.p));
+      // The drawing is the start. On a closed outline one whole range (a slider's, a move's time) is one lap from where it was drawn, the way a ride on the clock is (`rideShare`:
+      // round and round from the share it was drawn at), so a thing drawn at 3 o'clock is at 9 o'clock half way and back at 3 at the end. An open outline is gone along, from where
+      // it was drawn to its far end.
+      const here = pointAlong(line, line.closed ? rideShare(first, trans.p, true) : lerp(first, 1, trans.p));
       const anchor = pointAlong(line, first);
       // A mover that did not start on the line eases onto it; one that did is always on it.
       if (Math.hypot(a.x - anchor.x, a.y - anchor.y) <= 2) return here;

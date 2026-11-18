@@ -824,6 +824,45 @@ class Screen {
         good = `dragging the slider from ${slider.min} to ${slider.max}, the axis (${seen[0]?.ticks.split(' ').join(', ') ?? ''}) did not change and every bar rose (${words})`;
         break;
       }
+      case 'orbit-lap': {
+        // a bound ride along a closed outline: one whole range is one lap from where the Earth was drawn (3 o'clock), clockwise: 6 at a quarter, 9 at half, 12 at three quarters, 3 again at the end
+        const centreOf = async (id: string): Promise<{ x: number; y: number } | null> =>
+          tab.eval<{ x: number; y: number } | null>(`(() => { const e = window.__stage.elements().find((c) => c.id === ${JSON.stringify(id)}); return e ? { x: e.box.x + e.box.width / 2, y: e.box.y + e.box.height / 2 } : null; })()`);
+        const controls = await tab.eval<{ id: string; min: number; max: number }[]>('window.__stage.controls().map((c) => ({ id: c.id, min: c.min, max: c.max }))');
+        const slider = controls.find((c) => c.id === 'olmonth');
+        if (slider === undefined) {
+          problems.push('the slider olmonth is not on stage');
+          break;
+        }
+        await tab.eval(`window.__stage.control('olmonth', ${slider.min})`);
+        await sleep(600);
+        const sun = await centreOf('olring');
+        const home = await centreOf('olearth');
+        if (sun === null || home === null) {
+          problems.push('the ring or the Earth is not on stage');
+          break;
+        }
+        const radius = Math.hypot(home.x - sun.x, home.y - sun.y);
+        if (!(home.x > sun.x + radius * 0.9 && Math.abs(home.y - sun.y) < radius * 0.1)) problems.push(`the Earth is not drawn at 3 o'clock: it stands ${Math.round(home.x - sun.x)} right and ${Math.round(home.y - sun.y)} down of the ring's middle`);
+        const names = ['3', '6', '9', '12', '3'];
+        const where: string[] = [];
+        for (const [index, share] of [0, 0.25, 0.5, 0.75, 1].entries()) {
+          await tab.eval(`window.__stage.control('olmonth', ${slider.min + share * (slider.max - slider.min)})`);
+          await sleep(600);
+          const earth = await centreOf('olearth');
+          if (earth === null) {
+            problems.push('the Earth left the stage');
+            break;
+          }
+          // on screen, y runs down, so a turn clockwise from 3 o'clock goes down first
+          const want = { x: sun.x + radius * Math.cos(share * 2 * Math.PI), y: sun.y + radius * Math.sin(share * 2 * Math.PI) };
+          const off = Math.hypot(earth.x - want.x, earth.y - want.y);
+          where.push(`${names[index]} o'clock`);
+          if (off > Math.max(4, radius * 0.08)) problems.push(`at ${Math.round(share * 100)}% of the range the Earth should be at ${names[index]} o'clock (${Math.round(want.x)},${Math.round(want.y)}); it is at ${Math.round(earth.x)},${Math.round(earth.y)}, ${Math.round(off)} px off`);
+        }
+        good = `the Earth drawn at 3 o'clock went round clockwise as the slider went from ${slider.min} to ${slider.max}: ${where.join(', ')}`;
+        break;
+      }
       case 'fb-054': {
         // fb-054: a choice revised by id came back as plain words nobody could tap
         const words = await tab.eval<{ text: string; phase: string; opacity: number; tappable: boolean }[]>('window.__stage.elements().filter((e) => e.kind === "text").map((e) => ({ text: String(e.text || ""), phase: e.phase, opacity: e.opacity, tappable: e.tappable }))');
@@ -1627,7 +1666,7 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     // fb-001 (docs/feedback.md): code blocks that did not render in the tour's code chapter. `--only fb-001` is the code demo's judging.
     demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, name === 'code' ? ['fb-001'] : [], (run) => run.demoScenes([name], index === 0))));
     // fb-058 to fb-061 (docs/feedback.md): the big-numbers maths turn. `--only fb-059` is the hard group's judging of its own scene (fb-060, fb-061 and fb-058 likewise; the ask and maths groups too)
-    units.push(screenUnit('demo-hard', 60, ['fb-058', 'fb-059', 'fb-060', 'fb-061', 'fb-071'], (run) => run.hardScenes()));
+    units.push(screenUnit('demo-hard', 60, ['fb-058', 'fb-059', 'fb-060', 'fb-061', 'fb-071', 'orbit-lap'], (run) => run.hardScenes()));
   }
   for (const screen of LENS_SCREENS) {
     units.push({
