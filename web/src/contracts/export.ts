@@ -41,7 +41,7 @@ export interface VideoRequest {
    * words under it smaller, in the look's own colours. It begins to fade in 0.3 s after the turn starts (the turn starts where its prompt begins to be typed, or its touch lands) and is
    * whole 0.3 s later, and fades out over the 0.3 s before the turn ends (the next turn's start; the film's end for the last). A turn with no entry has no caption.
    */
-  readonly captions?: Readonly<Record<string, { readonly name: string; readonly caption: string }>>;
+  readonly captions?: Readonly<Record<string, { readonly name: string; readonly caption: string; /** the corner it stands in: the bottom left by default; a page whose own words or picture reach that corner asks for another */ readonly at?: 'bottom-left' | 'bottom-right' | 'top-left' }>>;
   /** A short line that stands at the top right of the stage in every frame of the film, in the look's own colours: "Scripted tour, no model". */
   readonly tag?: string;
   /** A control the session recorded moved (a slider the viewer dragged before an act) is played as a drag, the knob going smoothly from where it stood to the new value over `DRAG.seconds` at the start of the turn's lead-in, and the picture bound to it following (default off: it jumps when the turn begins). */
@@ -68,7 +68,7 @@ export interface ExportProgress {
 
 export interface ExportJob {
   /** resolves with the finished file; rejects with a message a person can act on, or with an AbortError after `cancel` */
-  readonly done: Promise<{ readonly blob: Blob; readonly fileName: string; /** a video: the film's music is in the file */ readonly hasSound?: boolean; /** something the viewer should be told about what was made, in a sentence (the film was cut to its limit) */ readonly note?: string; /** a film with waits cut out: where, in the session's real time, so another recording can be cut the same */ readonly cuts?: CutList }>;
+  readonly done: Promise<{ readonly blob: Blob; readonly fileName: string; /** a video: the film's music is in the file */ readonly hasSound?: boolean; /** something the viewer should be told about what was made, in a sentence (the film was cut to its limit) */ readonly note?: string; /** a film with waits cut out: where, in the session's real time, so another recording can be cut the same */ readonly cuts?: CutList; /** a video: where each turn is in the file (before any waits were cut) */ readonly turns?: readonly FilmTurn[] }>;
   onProgress(listener: (progress: ExportProgress) => void): () => void;
   cancel(): void;
 }
@@ -100,6 +100,17 @@ export interface Exporter {
   formats(): Promise<{ readonly video: readonly ('webm' | 'mp4')[]; readonly svg: boolean; readonly pdf: boolean }>;
   start(film: Film, request: ExportRequest): ExportJob;
   dispose(): void;
+}
+
+/** Where one turn of a video is, in film seconds: the reel's own account of itself, so a still can be taken at a turn's rest and a film's length added up from its turns. */
+export interface FilmTurn {
+  readonly turn: string;
+  /** where the turn begins: its prompt typed, its touch, a slider dragged (a caption begins here) */
+  readonly from: number;
+  /** where the turn's own drawing begins, after that lead and the wait for its first line */
+  readonly start: number;
+  /** where the turn's own drawing ends; the film's end is this long after the last turn's, at rest */
+  readonly to: number;
 }
 
 /** One cut, in real time (the session's own clock, before anything was cut). */

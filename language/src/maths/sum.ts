@@ -71,7 +71,9 @@ export type MathSum =
   | { readonly method: 'split'; readonly operands: readonly [string] }
   /** `whole = a + b`; the one to find is `?` (the whole, or a part) */
   | { readonly method: 'bond'; readonly whole: string; readonly parts: readonly [string, string] }
-  | { readonly method: 'bar' | 'groups' | 'array' | 'line'; readonly text: string };
+  | { readonly method: 'bar' | 'groups' | 'array' | 'line'; readonly text: string }
+  /** a typeset formula: TeX, kept as written (one line, spaces gathered); the page sets it with KaTeX, and the server never reads it */
+  | { readonly method: 'formula'; readonly tex: string };
 
 export type SumRead = { readonly ok: true; readonly sum: MathSum; readonly text: string } | { readonly ok: false; readonly why: string };
 
@@ -88,8 +90,30 @@ function tidySigns(text: string): string {
     .trim();
 }
 
+/** The delimiters a model writes round a formula out of habit (`$…$`, `$$…$$`, `\(…\)`, `\[…\]`): the line is the formula already, so they are dropped. */
+function unwrapTex(text: string): string {
+  const pairs: readonly (readonly [string, string])[] = [['$$', '$$'], ['$', '$'], ['\\(', '\\)'], ['\\[', '\\]']];
+  for (const [open, close] of pairs) {
+    if (text.length <= open.length + close.length || !text.startsWith(open) || !text.endsWith(close)) continue;
+    const inner = text.slice(open.length, text.length - close.length).trim();
+    // `$a$ and $b$` is two formulas in words, not one formula in a pair of dollars
+    if (!inner.includes('$')) return inner;
+  }
+  return text;
+}
+
+/** `formula`: the TeX after the bar, as written. Not canonicalised like a number: spaces are gathered to one (TeX ignores them in a formula, and `\text{}` keeps one), nothing else is touched. */
+function readFormula(written: string): SumRead {
+  const tex = unwrapTex(written.replace(/\s+/g, ' ').trim());
+  if (tex === '') return fail('a formula needs its TeX after the bar: math f1 formula | c = \\frac{d}{\\Delta t}');
+  if (tex.length > MATH_LIMITS.formula) return fail(`a formula holds at most ${MATH_LIMITS.formula} characters of TeX (this is ${tex.length}); split it into two`);
+  if (/[\u0000-\u001f]/.test(tex)) return fail('a formula is TeX on one line');
+  return { ok: true, sum: { method: 'formula', tex }, text: tex };
+}
+
 /** Reads the sum written after the bar of a `math` line. `column`: `12 + 12 + 12`, `503 - 278`, `3.4 + 12.75`. `times`: `47 × 6`. `split`: `347`. `bond`: `10 = 4 + ?`. */
 export function readSum(method: MathMethod, written: string): SumRead {
+  if (method === 'formula') return readFormula(written);
   const text = tidySigns(written);
   if (text === '') return fail('a math line needs its sum after the bar: math m1 column | 12 + 12');
   switch (method) {
@@ -217,6 +241,9 @@ export function answerOf(sum: MathSum): readonly string[] {
       else out.push(showDec(subDec(readDec(sum.whole) as Dec, readDec(a === '?' ? b : a) as Dec)));
       break;
     }
+    case 'formula':
+      // a formula asks nothing of anyone: it is typeset, never a sum to work out, and so nothing in it is sealed
+      return [];
     default: {
       const found = /^(\d+(?:\.\d+)?) ?([+\-×÷]) ?(\d+(?:\.\d+)?)$/.exec(sum.text);
       if (found?.[1] === undefined || found[3] === undefined) break;
@@ -241,6 +268,8 @@ export function sumNumbers(sum: MathSum): readonly string[] {
       return sum.operands;
     case 'bond':
       return [sum.whole, ...sum.parts].filter((part) => part !== '?');
+    case 'formula':
+      return [];
     default:
       return sum.text.match(/\d+(?:\.\d+)?/g) ?? [];
   }

@@ -25,7 +25,10 @@ export interface TurnSpan {
   readonly to: number;
 }
 
-export type Captions = Readonly<Record<string, { readonly name: string; readonly caption: string }>>;
+/** Where a caption stands on the stage: the bottom left unless the turn's picture needs that corner (the words of a page run along the foot, a list reaches down to it). */
+export type CaptionSide = 'bottom-left' | 'bottom-right' | 'top-left';
+
+export type Captions = Readonly<Record<string, { readonly name: string; readonly caption: string; readonly at?: CaptionSide }>>;
 
 export interface Labels {
   readonly captions?: Captions;
@@ -70,25 +73,29 @@ interface Rows {
   /** where the words begin inside the panel: past the padding and the accent bar */
   readonly inset: number;
   readonly box: Box;
+  /** the right edge a caption keeps to when it stands at the right (its width is only known when it is drawn in the face the pen has); null at the left */
+  readonly right: number | null;
   readonly radius: number;
 }
 
 /** The caption's rows and where its panel stands, at the stage's bottom left. */
-function setCaption(stage: Box, scale: number, vertical: boolean, name: string, caption: string): Rows {
+function setCaption(stage: Box, scale: number, vertical: boolean, name: string, caption: string, at: CaptionSide): Rows {
   const nameSize = Math.max(CAPTION.name * scale, 13);
   const wordsSize = Math.max(CAPTION.words * scale, 10);
   const pad = Math.max(20 * scale, 8);
   const gap = Math.max(7 * scale, 3);
   const margin = Math.max(CAPTION_MARGIN * scale, 10);
   // wide enough to read on one row, never into the middle of the foot of the stage where the cut marker stands
-  const room = Math.max(wordsSize * 8, stage.width * (vertical ? 0.9 : 0.44) - pad * 2 - margin);
+  const room = Math.max(wordsSize * 8, stage.width * (vertical ? 0.9 : 0.36) - pad * 2 - margin);
   const nameRows = wrapWords(name, Math.max(6, Math.floor(room / (nameSize * ADVANCE))));
   const wordsRows = wrapWords(caption, Math.max(8, Math.floor(room / (wordsSize * ADVANCE))));
   const wide = Math.max(...nameRows.map((row) => [...row].length * nameSize * ADVANCE), ...wordsRows.map((row) => [...row].length * wordsSize * ADVANCE), 0);
   const height = pad * 2 + nameRows.length * nameSize * 1.2 + (wordsRows.length > 0 ? gap + wordsRows.length * wordsSize * 1.35 : 0);
   const inset = pad * 1.34;
   const width = Math.min(stage.width - margin * 2, wide + inset + pad);
-  return { name: nameRows, words: wordsRows, nameSize, wordsSize, pad, gap, inset, box: { x: stage.x + margin, y: stage.y + stage.height - margin - height, width, height }, radius: Math.max(10 * scale, 4) };
+  const x = at === 'bottom-right' ? stage.x + stage.width - margin - width : stage.x + margin;
+  const y = at === 'top-left' ? stage.y + margin : stage.y + stage.height - margin - height;
+  return { name: nameRows, words: wordsRows, nameSize, wordsSize, pad, gap, inset, box: { x, y, width, height }, right: at === 'bottom-right' ? stage.x + stage.width - margin : null, radius: Math.max(10 * scale, 4) };
 }
 
 /** The tag's pill, at the stage's top right. */
@@ -119,16 +126,25 @@ export function labelsOf(labels: Labels, spans: readonly TurnSpan[], stage: Box,
   const tag = labels.tag === undefined || labels.tag === '' ? null : labels.tag;
   const tagSet = tag === null ? null : setTag(stage, scale, tag);
   const captions = labels.captions ?? {};
+  // turns that run on with one caption (a page that takes a tap or two) keep it standing: it fades in at the first and out at the last, not between them
+  const held: TurnSpan[] = [];
+  for (const span of spans) {
+    const before = held[held.length - 1];
+    const a = before === undefined ? undefined : captions[before.turn];
+    const b = captions[span.turn];
+    if (before !== undefined && a !== undefined && b !== undefined && a.name === b.name && a.caption === b.caption && a.at === b.at && before.to === span.from) held[held.length - 1] = { turn: before.turn, from: before.from, to: span.to };
+    else held.push(span);
+  }
   // a caption's rows are set once
   const sets = new Map<string, Rows>();
-  for (const span of spans) {
+  for (const span of held) {
     const entry = captions[span.turn];
-    if (entry !== undefined && !sets.has(span.turn)) sets.set(span.turn, setCaption(stage, scale, vertical, entry.name, entry.caption));
+    if (entry !== undefined && !sets.has(span.turn)) sets.set(span.turn, setCaption(stage, scale, vertical, entry.name, entry.caption, entry.at ?? 'bottom-left'));
   }
   return (t, palette) => {
     // the caption of the latest turn that has begun and is not over
     let on: { readonly span: TurnSpan; readonly alpha: number } | null = null;
-    for (const span of spans) {
+    for (const span of held) {
       if (!sets.has(span.turn) || t < span.from || t >= span.to) continue;
       const alpha = captionAlpha(span.from, span.to, t);
       if (alpha > 0 && (on === null || span.from >= on.span.from)) on = { span, alpha };
@@ -154,7 +170,8 @@ function paintCaption(context: SurroundPen, set: Rows, caption: { readonly alpha
   let wide = Math.max(0, ...set.name.map((row) => context.measureText(row).width));
   context.font = `400 ${set.wordsSize}px ${FACE}`;
   wide = Math.max(wide, ...set.words.map((row) => context.measureText(row).width));
-  const box = { ...set.box, width: wide + set.inset + set.pad };
+  const width = wide + set.inset + set.pad;
+  const box = { ...set.box, width, x: set.right === null ? set.box.x : set.right - width };
   context.globalAlpha = 0.88 * caption.alpha;
   context.fillStyle = palette.ground;
   context.beginPath();

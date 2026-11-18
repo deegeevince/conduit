@@ -788,6 +788,8 @@ export type IssueCode =
   | 'unknown-name'
   | 'too-long'
   | 'unknown-verb'
+  /** v3 (fb-075, fb-008). A line that was no Series (a sentence, a markdown bullet) and was said as text instead, so that nothing the brain wrote is lost; it is not something the brain drew */
+  | 'said-as-text'
   | 'missing-id'
   | 'bad-id'
   | 'missing-text'
