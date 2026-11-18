@@ -56,7 +56,7 @@ import { TOUR_SCREENS, tourGroup } from './tour-check';
 import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
 import { mathsGroup } from './math-check';
-import { checkGlyphs, checkInk, checkListings, checkSlideWords, checkTakeover, flowsGroup, footprintJudge, photoGroup, sceneFactsOf, streamFixtureCheck, testPattern } from './real-check';
+import { checkGlyphs, checkInk, checkListings, checkSlideWords, checkTakeover, flowsGroup, footprintJudge, photoGroup, sceneFactsOf, streamBrainCheck, streamFixtureCheck, testPattern } from './real-check';
 import type { Footprint } from './real-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
@@ -1433,8 +1433,8 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     needs: 'slow',
     weight: 25,
     run: async (servers, out) => {
-      out.lines.push('\nstream (a turn at 80 characters a second, a recorded stream-json turn)');
-      const results = await streamFixtureCheck();
+      out.lines.push('\nstream (a turn at 80 characters a second, a recorded stream-json turn, the same turn through the brain)');
+      const results = [...(await streamFixtureCheck()), ...(await streamBrainCheck())];
       if (servers.slow === null) results.push({ turn: 0, check: 'stream-first-element', verdict: 'SKIP', detail: 'skipped (--url was given: this needs a server that streams slowly)' });
       else results.push(...(await new Screen(args, servers.slow, args.screens[0] as Args['screens'][number], join(args.out, 'stream'), welcome).streamScene()));
       checkLines(out, results);
