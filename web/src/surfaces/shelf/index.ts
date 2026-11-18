@@ -4,9 +4,9 @@
 
 import type { AppShelf } from '@conduit/language';
 
-/** The library each shelf word names; `charts` and `graphs` are the one D3. */
-const LIBRARY: Readonly<Record<AppShelf, 'matter' | 'tone' | 'katex' | 'd3' | 'fonts'>> = { physics: 'matter', sound: 'tone', maths: 'katex', charts: 'd3', graphs: 'd3', fonts: 'fonts' };
-const ORDER = ['fonts', 'katex', 'matter', 'd3', 'tone'] as const;
+/** The library each shelf word names; `charts` and `graphs` are the one D3. `maps` is the land outlines (`World.land`), made from a data file at build time. */
+const LIBRARY: Readonly<Record<AppShelf, 'matter' | 'tone' | 'katex' | 'd3' | 'fonts' | 'maps'>> = { physics: 'matter', sound: 'tone', maths: 'katex', charts: 'd3', graphs: 'd3', fonts: 'fonts', maps: 'maps' };
+const ORDER = ['fonts', 'katex', 'matter', 'd3', 'tone', 'maps'] as const;
 type Library = (typeof ORDER)[number];
 
 const files = import.meta.glob('./built/*.html', { query: '?raw', import: 'default' }) as Record<string, () => Promise<string>>;

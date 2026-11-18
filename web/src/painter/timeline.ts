@@ -20,7 +20,7 @@ import { boundElement, boundSchedule, controlIndexOf, createRuntime, heldBy, moo
 import type { BoundWords, ControlRuntime } from './bound';
 import { targetPx } from './target';
 import { controlInputOf, controlLayoutOf, placeParts, scrollCues } from './controls-stage';
-import { askOf } from './controls/ask-state';
+import { askOf, lockedOf as askLocked } from './controls/ask-state';
 import type { ControlSite } from './controls-stage';
 import { layoutCard } from './controls';
 import type { ControlLayout } from '../contracts/controls';
@@ -949,6 +949,12 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         if (spec === null || span.parent !== null) continue;
         const layout = controlLayoutOf({ span, value: spec.value, mood: CALM, maxWidth: roomOf(span), look, viewport, fit: controlFit, compact });
         if (layout === null) continue;
+        // fb-060. An ask that waits for the one before it draws nothing: no number and no blank. It is placed nowhere, so it takes no spot that words or a drawing
+        // stand on; in the flow its room is only kept in the plan (as for a control that has not come yet), and it appears when the ask before it is settled.
+        if (askLocked(span)) {
+          upcoming.push({ key: span.key, order: span.order, text: '', emphasis: [], style: controlStyle(span, start), struck: false, replaces: null, reserve: { width: layout.width, height: layout.height, ...(compact > 0 ? { tight: true } : {}) } });
+          continue;
+        }
         if (scroll) {
           members.push({ span, layout, present: !coming });
           if (!coming) liveControls.push(span);

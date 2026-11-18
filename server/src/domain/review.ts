@@ -216,7 +216,7 @@ export function reviewPolicyFrom(base: ReviewPolicy, overrides: Partial<ReviewPo
 
 /** What the brain is asked when it is shown its draft, as the user's words. */
 export function askedOf(input: TurnInput): string {
-  const text = input.kind === 'prompt' ? input.text : input.kind === 'tap' || input.kind === 'act' ? input.text : '';
+  const text = input.kind === 'act' && input.part !== undefined ? `They tapped the label "${input.part.label}" to ask about it` : input.kind === 'prompt' ? input.text : input.kind === 'tap' || input.kind === 'act' ? input.text : '';
   const flat = text.replace(/\s+/g, ' ').trim();
   return flat.length > 600 ? `${flat.slice(0, 600)}...` : flat;
 }

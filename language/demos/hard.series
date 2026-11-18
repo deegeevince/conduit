@@ -130,6 +130,42 @@ say label near=panel:above | A dim note on a dark ground
 say label near=panel:below size=s ink=dim | a smaller dimmer one
 wait 1
 
+# fb-058: the column sum is a `math` line the painter works out, not digits placed by hand (so the carries line up): a worked example, then her own sum with its boxes blank, then asks that wait their turn
+scene fb-058 layout=stack brisk
+math w1 column worked | 4768 + 2557
+math m1 column | 3486 + 2795
+ask q1 is=7043 stage=1 | 5079 + 1964 = __
+ask q2 is=10000 stage=2:q1 | 6358 + 3642 = __
+wait 0.5
+
+# fb-060: asks that wait for the one before them draw nothing: no number, no blank, no room taken from the words round them
+scene fb-060 layout=free canvas=square brisk
+say t1 title enter=cut | Adding big numbers
+say s1 at=50,30 enter=cut | Line up the columns and add. @with
+say s2 at=50,44 enter=cut | Start with the ones. @with
+ask q1 is=6281 stage=1 | 3486 + 2795 = __
+ask q2 is=7043 stage=2:q1 | 5079 + 1964 = __
+ask q3 is=10000 stage=3:q2 | 6358 + 3642 = __
+wait 0.5
+
+# fb-061: an ask written with a step among its answers (and a thousands comma) still works: it accepts the one answer, the hint that names a step stays, and the line says why
+scene fb-061 layout=stack brisk
+say s1 enter=cut | Add 3,486 and 2,795, the ones first.
+ask q1 is=6,281,6 stage=1 | 3486 + 2795 = __
+hint in=q1 stage=yes | Start right: 6 + 5. Is that more than 9? What do you write, and what do you carry?
+wait 0.5
+
+# fb-059: a title with no at= in a free scene goes to the top of the stage, never over what is drawn
+scene fb-059 layout=free canvas=square brisk
+say t1 title enter=cut | Adding big numbers
+say d1 at=60,28 align=right face=mono enter=cut | 4768 @with
+say d2 at=60,42 align=right face=mono enter=cut | 2557 @with
+path rl stroke=ink enter=cut | M34,50 L62,50 @with
+say d3 at=60,58 align=right face=mono ink=accent enter=cut | 7325 @with
+say n1 aside at=84,28 enter=cut | 1. Line up the columns. @with
+say n2 aside at=84,44 enter=cut | 2. Add from the right. @with
+wait 0.5
+
 # fb-025: an app whose code reaches for d3 and never says `uses=`. The host loads the library all the same (and d3-geo is on the shelf), so the globe is drawn.
 # The scene asks for nothing on its app line: if the frame ever stops hearing that, d3 is not defined, the script throws, and the frame shows an empty ground.
 scene fb-025 layout=caption
@@ -183,6 +219,35 @@ row fixblank | c.width = innerWidth; c.height = innerHeight;
 row fixblank | x.fillStyle = '#1f3a5f'; x.fillRect(0, 0, c.width, c.height);
 row fixblank | </script>
 say c1 | An app that draws nothing.
+wait 1
+
+# fb-026: the world's land, real. An app that draws `World.land` (the shelf's Natural Earth outlines) with D3 must draw land, and in the right place. It names `uses=maps,charts`, and turns the
+# globe to centre on 30E 10N, so that Africa is not the middle pixel: the check reads the screenshot (literal colours: land #e8b84a over sea #1b4f9c, nothing else in either).
+scene fb-026 layout=caption
+app earth height=330 uses=maps,charts | The Earth, drawn from World.land
+row earth | <style>body { margin: 0; overflow: hidden; background: #f4f1ea; } svg { display: block; width: 100vw; height: 100vh; }</style>
+row earth | <svg id="s"></svg>
+row earth | <script>
+row earth | var w = innerWidth, h = innerHeight, svg = d3.select('#s');
+row earth | var proj = d3.geoOrthographic().scale(Math.min(w, h) * 0.45).translate([w / 2, h / 2]).rotate([-30, -10]);
+row earth | var path = d3.geoPath(proj);
+row earth | svg.append('path').datum({ type: 'Sphere' }).attr('d', path).attr('fill', '#1b4f9c');
+row earth | svg.append('path').datum(World.land).attr('d', path).attr('fill', '#e8b84a');
+row earth | </script>
+say c1 | The Earth, from the shelf's land.
+wait 1
+
+# fb-026, the other way in: an app that never says `uses=` and reaches for `World.land`. The land is loaded for it anyway (the log holds a `uses-inferred` warning for it), whole and frozen:
+# the page shows its land-coloured block only if `World.land` is a MultiPolygon of over a hundred polygons and cannot be changed. No D3 here, so the page stays light.
+scene fb-026-inferred layout=caption brisk
+app world height=120 | The land is there, and frozen
+row world | <style>body { margin: 0; background: #1b4f9c; } #d { width: 50vw; height: 60vh; margin: 20vh auto; background: #e8b84a; }</style>
+row world | <div id="d"></div>
+row world | <script>
+row world | var ok = World.land.type === 'MultiPolygon' && World.land.coordinates.length > 100 && Object.isFrozen(World.land);
+row world | if (!ok) document.getElementById('d').remove();
+row world | </script>
+say c1 | The land arrived without being asked for.
 wait 1
 
 # a photo with callouts at spots. The check puts a generated test pattern up as u1 (900 by 600) and, as the server does for a photo a turn carries, the shape is stamped: aspect=1.5

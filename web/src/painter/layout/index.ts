@@ -149,6 +149,8 @@ const TIGHT_GAP = 0.2;
 /** lines a stack reserves room for when the brain did not say how many to expect */
 const FALLBACK_LINES = 3;
 const FREE_CANDIDATES: readonly Anchor[] = ['center', 'top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
+/** where a heading with no place of its own looks, in order, in a free scene */
+const HEADING_CANDIDATES: readonly Anchor[] = ['top', 'top-left', 'top-right', 'bottom', 'bottom-left', 'bottom-right', 'center', 'left', 'right'];
 const FG_CANDIDATES: readonly Anchor[] = ['top-right', 'bottom-right', 'top-left', 'bottom-left'];
 
 interface Prep {
@@ -1293,9 +1295,12 @@ function arrangeLooseWith(
   const placed = new Map<string, Placement[]>();
   // The reading plane first, so the far and near planes can keep clear of everything on it.
   // Then the far and near words that were told where to go (near before far, so the far one steps aside), then those that choose: they keep clear of everything already placed.
+  // fb-059. In a free scene, words told no place (a title, a line, a control) are the stage's to place: they go after every word told a point, and stand clear of
+  // those and of what is drawn, never on the worked answer the brain set at its own coordinates.
+  const unplaced = (unit: Unit): boolean => ctx.input.layout === 'free' && unit.main.item.style.layer === 'mid' && unit.main.item.style.at === null && ctx.input.pins?.has(unit.main.item.key) !== true;
   const rank = (unit: Unit): number => {
     const { layer, at } = unit.main.item.style;
-    return layer === 'mid' ? 0 : at !== null ? (layer === 'fg' ? 1 : 2) : 3;
+    return layer === 'mid' ? (unplaced(unit) ? 0.5 : 0) : at !== null ? (layer === 'fg' ? 1 : 2) : 3;
   };
   const order = [...units].sort((a, b) => rank(a) - rank(b));
   const columnOf = narrationColumn(units, ctx);
@@ -1321,8 +1326,11 @@ function arrangeLooseWith(
     // `align=right` on words set at a point: the point is their right edge (digits lined up in a column); `left`, their left; else the centre
     const edge = style.align === 'right' ? 1 : style.align === 'left' ? 0 : 0.5;
     const pin = columnOf.has(unit.main.item.key) ? null : (ctx.input.pins?.get(unit.main.item.key) ?? null);
+    const heading = explicit === null && layer === 'mid' && unplaced(unit) && isHeading(unit);
     const candidates: readonly (Anchor | Point)[] =
-      explicit !== null ? [explicit] : layer === 'bg' ? BG_CANDIDATES : layer === 'fg' ? FG_CANDIDATES : FREE_CANDIDATES;
+      explicit !== null ? [explicit] : layer === 'bg' ? BG_CANDIDATES : layer === 'fg' ? FG_CANDIDATES : heading ? HEADING_CANDIDATES : FREE_CANDIDATES;
+    // words the stage places in a free scene keep off the shapes drawn there too (a card the words stand on is their ground, not in their way)
+    const drawn: readonly Rect[] = pin === null && explicit === null && layer === 'mid' && unplaced(unit) ? (ctx.input.obstacles ?? []).filter((o) => (o as { ground?: boolean }).ground !== true) : [];
     // strictest first: keep clear of where the stack will grow, then of the block, then of the lines on stage
     const tiers: Rect[][] = layer === 'mid' ? [[]] : [...regions.map((rect) => [projectRect(rect, layer, ctx)]), []];
 
@@ -1395,6 +1403,21 @@ function arrangeLooseWith(
       chosen = { loose: best.loose, position: best.position };
     }
     if (columnOf.has(unit.main.item.key)) chosen = columnOf.get(unit.main.item.key) ?? null;
+    // fb-059. A heading told no place stands at the top of the stage, clear of every word and drawing there: set a little smaller before it gives up the top
+    if (heading && chosen === null) {
+      const keepClear = [...taken, ...drawn];
+      look: for (const shrink of [1, 0.85, 0.7, 0.55]) {
+        for (const anchor of ['top', 'top-left', 'top-right'] as const) {
+          const loose = buildLoose(unit, anchor, frame, ctx, shrink);
+          const size = { width: loose.width, height: loose.height };
+          const position = snapInside(anchorBox(anchor, size, frame), size, frame, ctx);
+          if (overlapWith({ ...position, ...size }, keepClear, pad) === 0) {
+            chosen = { loose, position };
+            break look;
+          }
+        }
+      }
+    }
     for (const tier of pin !== null || chosen !== null ? [] : tiers) {
       const avoid = [...text, ...tier, ...taken, ...across];
       bestOverlap = Infinity;
@@ -1424,7 +1447,7 @@ function arrangeLooseWith(
             }
             break;
           }
-          const overlap = overlapWith({ ...position, ...size }, layer === 'mid' ? taken : avoid, pad);
+          const overlap = overlapWith({ ...position, ...size }, layer === 'mid' ? [...taken, ...drawn] : avoid, pad);
           if (overlap < bestOverlap - EPS) {
             bestOverlap = overlap;
             chosen = { loose, position };
@@ -1434,6 +1457,12 @@ function arrangeLooseWith(
         if (bestOverlap === 0) break;
       }
       if (bestOverlap === 0) break;
+    }
+    // fb-059/060. Words the stage places in a free scene that no anchor leaves clear move to the nearest place that is, rather than lie on what is there
+    if (chosen !== null && pin === null && explicit === null && layer === 'mid' && unplaced(unit) && bestOverlap > EPS) {
+      const size = { width: chosen.loose.width, height: chosen.loose.height };
+      const found = nearestClear(chosen.position, size, frame, [...taken, ...drawn], pad, { x: step.x, y: step.y / 2 });
+      if (found !== null) chosen = { loose: chosen.loose, position: snapInside(found, size, frame, ctx) };
     }
     if (chosen === null) continue;
     const { loose, position } = chosen;

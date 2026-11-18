@@ -628,7 +628,7 @@ export const STRUCTURE = {
   tune: { gist: 'rows `| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound', parts: 'rows', lays: 'engine' },
   app: { gist: 'rows `| line` of one HTML document (inline style and script), taken exactly: a live app that runs in a locked sandbox on the stage and answers back (taught only when the user asks for something that works)', parts: 'rows', lays: 'engine' },
   figure: { gist: 'a labelled drawing: each part one line (taught by the FIGURE chapter in the brief); rows are the lines of the figure, taken as written', parts: 'rows', lays: 'engine' },
-  math: { gist: 'a written method laid out as on paper (taught by the maths chapter, not yet in the brief): the line is `math <id> <method> | <sum>`, the painter works every digit', parts: 'rows', lays: 'engine' },
+  math: { gist: 'a written method laid out as on paper (taught by the maths chapter): the line is `math <id> <method> | <sum>`, the painter works every digit', parts: 'rows', lays: 'engine' },
   problem: { gist: 'an old maths question: it plays as an `ask` for its answer (the question as its words); write an `ask` instead', parts: 'rows', lays: 'engine' },
   screen: { gist: 'a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written', parts: 'rows', lays: 'engine' },
 } as const satisfies Record<string, { gist: string; parts: 'nodes' | 'rows'; lays: 'painter' | 'axis' | 'brain' | 'engine' }>;
@@ -675,12 +675,13 @@ export const APP_HEIGHT = { min: 120, max: 1200, default: 480 } as const;
 /**
  * v2.1. The vetted library shelf a live app may ask for (`app … uses=physics,sound`). The host puts the library in the app's own document,
  * because the sandbox has no network: `physics` is matter.js (global `Matter`), `sound` Tone.js (`Tone`), `maths` KaTeX (`katex`, its stylesheet
- * included) and `charts`/`graphs` D3 (`d3`; both words name the one library). Other words are said back as a mistake and ignored.
+ * included) and `charts`/`graphs` D3 (`d3`; both words name the one library). `maps` is not a library but the world's land outlines (Natural Earth, 1:110m)
+ * as the global `World` (`World.land`, a GeoJSON MultiPolygon). Other words are said back as a mistake and ignored.
  */
-export const APP_SHELVES = ['physics', 'sound', 'maths', 'charts', 'graphs', 'fonts'] as const;
+export const APP_SHELVES = ['physics', 'sound', 'maths', 'charts', 'graphs', 'fonts', 'maps'] as const;
 export type AppShelf = (typeof APP_SHELVES)[number];
 /** Words a brain says for a shelf that are not its name. */
-export const APP_SHELF_ALIASES: Readonly<Record<string, AppShelf>> = { math: 'maths', matter: 'physics', music: 'sound', tone: 'sound', katex: 'maths', chart: 'charts', graph: 'graphs', d3: 'charts' };
+export const APP_SHELF_ALIASES: Readonly<Record<string, AppShelf>> = { math: 'maths', matter: 'physics', music: 'sound', tone: 'sound', katex: 'maths', chart: 'charts', graph: 'graphs', d3: 'charts', map: 'maps', world: 'maps' };
 
 /** Which way a flow or a tree grows. */
 export const GROWTH = { right: 'left to right', down: 'top to bottom' } as const;
@@ -956,8 +957,8 @@ export const VERB = {
     family: 'structure',
   },
   fill: {
-    form: 'fill <problem or ask id> | <the answer>',
-    gist: 'Puts an answer the person gave you (by voice, by pen or in the chat) into the blank of a maths problem or an ask. The page shows it there and checks it itself, like a typed answer. It is the only way anything gets filled in: never say you filled a blank any other way.',
+    form: 'fill <ask, math id or math part> | <the answer>',
+    gist: 'Puts an answer the person gave you (by voice, by pen or in the chat) into the blank of an ask or a written method (`math`). The page shows it there and checks it itself, like a typed answer. It is the only way anything gets filled in: never say you filled a blank any other way.',
     time: 'instant',
     family: 'mind',
   },
@@ -1302,7 +1303,7 @@ export const LESSON_VERB = {
   },
   ask: {
     form: 'ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] [check=working|order|any|done] | <question>',
-    gist: 'A try: the learner types the answer, or taps one of the large choices in `pick=`. It is checked on the page, at once; every answer you will accept is in `is=` and nowhere else. A `_` stands for a space inside a value. `check=working` is for a question she works out on paper: her ink is read into lines of working, each step is checked with real arithmetic, and she is right when every step is and it ends on an answer in `is=`. `check=order` is for putting things in order: `is=` lists the items IN THE RIGHT ORDER (the question\'s own numbers or words; no `pick=`), she drags tiles into order, and the sequence is compared exactly. `check=any` is a choice with no single right answer (`pick=` the options, no `is=`): the gate opens when she holds a value. `check=done` is a tick (no `is=`, no `pick=`): the gate opens when she ticks it. Neither is sealed or checked.',
+    gist: 'A try: the learner types the answer, or taps one of the large choices in `pick=`. It is checked on the page, at once; every answer you will accept is in `is=` and nowhere else: the ways of writing the ONE answer (digits, words, a thousands comma or space are matched for you), never a step of the working. A `_` stands for a space inside a value. `check=working` is for a question she works out on paper: her ink is read into lines of working, each step is checked with real arithmetic, and she is right when every step is and it ends on an answer in `is=`. `check=order` is for putting things in order: `is=` lists the items IN THE RIGHT ORDER (the question\'s own numbers or words; no `pick=`), she drags tiles into order, and the sequence is compared exactly. `check=any` is a choice with no single right answer (`pick=` the options, no `is=`): the gate opens when she holds a value. `check=done` is a tick (no `is=`, no `pick=`): the gate opens when she ticks it. Neither is sealed or checked.',
     time: 'instant',
     family: 'lesson',
   },

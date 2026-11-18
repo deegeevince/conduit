@@ -12,7 +12,7 @@
 //   ask        a hand had answered an ask: the next ask opens and the first one folds, which only the page knew
 //   choices    a mouse's target is smaller than a finger's, so a choice is shorter (the server always measured as a finger)
 //   controls   a slider the hand moved, then a new question with a slider of the same name
-//   free-title a title the stage places on a free layout, over the worked answer (fb-062): the page and the server place it alike, and say alike which things do not land
+//   free-title a title the stage places on a free layout, over the worked answer (fb-062; and its asks that wait, fb-059, fb-060): the page and the server place it alike, and say alike which things do not land
 //   cjk, flow, carry, words   the plain cases, so that the check has something that must never drift
 //   scripts    Greek, Cyrillic, Arabic: the page measures them in the device's own font, so the server leaves the turn to the page
 //   app        a live app is sized by the browser: the server says so and leaves the turn to the page

@@ -17,6 +17,7 @@ import type {
   PageFacts,
   Seen,
   StateChange,
+  TappedPart,
   InkMarks,
   StartTurnRequest,
   LookId,
@@ -325,12 +326,23 @@ function skillIds(value: unknown): string[] {
   return [...new Set(ids)];
 }
 
+/** fb-055. The label a person tapped, when an `act` is that: its words and what it names, each cut short (the brief shows them to a brain). */
+function tappedPart(value: unknown): TappedPart | undefined {
+  if (value === undefined || value === null) return undefined;
+  const raw = obj(value, 'input.part');
+  const label = text(raw.label, 'input.part.label').replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (label === '') throw errors.badRequest('input.part.label must not be empty');
+  const on = raw.on === undefined || raw.on === null ? null : text(raw.on, 'input.part.on').slice(0, LIMITS.name);
+  return { label, on };
+}
+
 export function parseTurnInput(body: unknown): TurnInput {
   const input = obj(obj(body, 'body').input, 'input');
   const kind = oneOf(input.kind, ['prompt', 'tap', 'demo', 'script', 'act'] as const, 'input.kind');
   if (kind === 'act') {
     const screenId = input.screen === undefined || input.screen === null ? '' : text(input.screen, 'input.screen').slice(0, LIMITS.name);
-    return { kind, id: text(input.id, 'input.id').slice(0, LIMITS.name), text: text(input.text, 'input.text').slice(0, CONTROL_TEXT_CHARS), values: controlValues(input.values ?? {}, 'input.values'), ...(screenId === '' ? {} : { screen: screenId }), ...optionalSeen(input.seen, 'input.seen') };
+    const part = tappedPart(input.part);
+    return { kind, id: text(input.id, 'input.id').slice(0, LIMITS.name), text: text(input.text, 'input.text').slice(0, CONTROL_TEXT_CHARS), values: controlValues(input.values ?? {}, 'input.values'), ...(screenId === '' ? {} : { screen: screenId }), ...(part === undefined ? {} : { part }), ...optionalSeen(input.seen, 'input.seen') };
   }
   if (kind === 'script') {
     const source = text(input.text, 'input.text');

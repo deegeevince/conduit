@@ -18,6 +18,10 @@
 //   ask                (tablet 1180x820 at two pixels, touch, the lens off and on) a finger tap on an ask's blank focuses its input, also under the Draw layer after a pen stroke;
 //                      a short pen tap too, a pen drag writes; `fill` puts a wrong or right answer in the blank and opens the next stage; Send drawing names the ask (ask-check.ts)
 //   tour               (`/demo`; 1280x800, 820x971, 390x844) the tour opens on the stage, a chapter lists its cards, a card plays its demo with no model call, "Back to the tour" returns, `/demo <name>` jumps to one (tour-check.ts)
+//   fb-055             a label the brain drew (`say callout near=x`, a figure part's `label=`) is tapped to ask about what it names: one act that names the part, none for a drag, a click on
+//                      the drawn part or on plain words; with a mouse and a finger; the journey's `tap | Brakes` finds "brake disc" (label-check.ts)
+//   fb-064             the Undo chip puts the answer before back whole: the car's labels (and a click on one asks about it), its words and its choice, and nothing of the answer it
+//                      undid stands over it (undo-check.ts)
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
 //                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
 //
@@ -54,6 +58,8 @@ import { DRAW_SCREEN, drawGroup } from './draw-check';
 import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
 import { journeyGroup } from './journey-check';
+import { labelGroup } from './label-check';
+import { undoGroup } from './undo-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
 import { fb062Group, loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
@@ -241,6 +247,10 @@ function hardOrder(id: string): number {
   const source = readFileSync(fileURLToPath(import.meta.resolve('@conduit/language/demos/hard.series')), 'utf8');
   return source.split('\n').flatMap((raw) => /^scene\s+(\S+)/.exec(raw)?.[1] ?? []).indexOf(id) + 1;
 }
+
+/** the land and the sea of the fb-026 map fixtures (hard.series): literal colours, so that a screenshot can say what was drawn where */
+const LAND_RGB: readonly number[] = [0xe8, 0xb8, 0x4a];
+const SEA_RGB: readonly number[] = [0x1b, 0x4f, 0x9c];
 
 /** the spots of the photo scene, as a percent of the photo's width and height (the same as `pnpm photo-check` uses) */
 const PHOTO_SPOTS: readonly (readonly [string, number, number])[] = [['c1', 8, 10], ['c2', 92, 12], ['c3', 50, 50], ['c4', 20, 78], ['c5', 81, 90], ['c6', 50, 8], ['c7', 3, 50], ['c8', 97, 55]];
@@ -564,15 +574,15 @@ class Screen {
       const results: CheckResult[] = [];
       Screen.add(results, 'script-lines', rejectedLinesOf(source).slice(0, 3), 'every line of the script reads');
       const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(source)})).then(() => null, (e) => String(e && e.message || e))`);
-      // the script is one long turn that plays in real time (a minute, and a scene more with each failure written down): it is given half as long again as a demo
-      results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.round(this.args.timeoutMs * 1.5)), began));
+      // the script is one long turn that plays in real time (a minute and a half of the clock now, and a busy machine plays it slower): it is given as long as four demos
+      results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.max(Math.round(this.args.timeoutMs * 1.5), 240_000)), began));
       const starts = await this.sceneStarts(tab);
       if (starts.length !== ids.length) results.push({ turn: 0, check: 'scenes', verdict: 'FAIL', detail: `the script has ${ids.length} scenes but the turn has ${starts.length}` });
       const last = ids.length - 1;
       await this.judge(tab, talk, `demo-hard#${ids[last]}`, results, began, true, false, { footprints: true, photo: ids[last] === 'photo' });
       await this.hardAsserts(ids[last] as string, tab, talk, results, photo);
       await this.earlierScenes(tab, talk, 'demo-hard', starts, true, ids, async (index, scene) => this.hardAsserts(ids[index] as string, tab, talk, scene.results, photo), async (index) => {
-        if (/^fb-025/.test(ids[index] as string)) await this.appsLooked(tab);
+        if (/^fb-02[56]/.test(ids[index] as string)) await this.appsLooked(tab);
       });
       await this.briefHolds(tab, talk, session, results);
     } finally {
@@ -733,6 +743,68 @@ class Screen {
         good = 'all 8 callouts paint to within 2% of the photo width of their spots';
         break;
       }
+      case 'fb-058': {
+        // docs/feedback.md fb-058: the column sum is the painter's `math` block, laid out as on paper; the brain wrote no digit, so no word on stage is a bare number
+        // and none holds what the open block seals; the sum the person is to work stands with its boxes empty, and an ask that waits draws nothing
+        const blocks = live.filter((e) => e.kind === 'structure' && e.phase === 'on' && /^written method column/.test(e.text) && e.box.width > 50 && e.box.height > 50);
+        if (blocks.length !== 2) problems.push(`${blocks.length} of the 2 written methods (the worked example and her own sum) are on stage`);
+        const bare = texts.filter((e) => /^[\d\s.,+\-\u00d7\u00f7=]+$/.test(e.text.trim()));
+        if (bare.length > 0) problems.push(`digits placed by hand on stage: ${bare.slice(0, 3).map((e) => `"${e.text}"`).join(', ')}`);
+        const sealed = texts.filter((e) => e.text.replace(/[\s,]/g, '').includes('6281'));
+        if (sealed.length > 0) problems.push(`the sealed answer 6281 is in words on stage: "${sealed[0]?.text.slice(0, 40)}"`);
+        const cells = await tab.eval<{ part: string; value: string }[]>(`window.__stage.maths().flatMap((b) => b.id === 'm1' ? b.cells.map((c) => ({ part: c.part, value: String(c.value ?? '') })) : [])`);
+        if (!cells.some((c) => c.part === 'ans-ones')) problems.push('her own sum has no answer boxes');
+        const filled = cells.filter((c) => c.value !== '');
+        if (filled.length > 0) problems.push(`her boxes are not empty: ${filled.map((c) => `${c.part}=${c.value}`).join(', ')}`);
+        const asks = await tab.eval<string[]>(`window.__stage.controls().filter((c) => c.ask).map((c) => c.id)`);
+        if (asks.join(',') !== 'q1') problems.push(`the asks drawn are ${JSON.stringify(asks)}, wanted only q1 (q2 waits)`);
+        good = 'a worked example and her own sum are laid out by the painter (no digit in any word, the answer sealed, her boxes empty), q1 is open and q2 draws nothing';
+        break;
+      }
+      case 'fb-059': {
+        // docs/feedback.md fb-059: a title with no at= in a free scene stands at the top of the stage, over nothing
+        const title = live.find((e) => e.id === 't1');
+        const rest = live.filter((e) => e.id !== 't1' && e.phase === 'on' && e.box.width > 0 && e.box.height > 0);
+        const view = await tab.eval<{ h: number }>('({ h: innerHeight })');
+        if (title === undefined) problems.push('the title is not on stage');
+        else {
+          const over = rest.filter((e) => title.box.x < e.box.x + e.box.width && title.box.x + title.box.width > e.box.x && title.box.y < e.box.y + e.box.height && title.box.y + title.box.height > e.box.y);
+          if (over.length > 0) problems.push(`the title lies over ${over.slice(0, 3).map((e) => `${e.id} "${e.text.slice(0, 20)}"`).join(', ')}`);
+          const lowest = Math.min(...rest.map((e) => e.box.y));
+          if (title.box.y + title.box.height > lowest + 1) problems.push(`the title (${title.box.y.toFixed(0)}..${(title.box.y + title.box.height).toFixed(0)}) is not above everything else (which starts at ${lowest.toFixed(0)})`);
+          if (title.box.y + title.box.height / 2 > view.h / 3) problems.push(`the title is not at the top of the stage (its middle is at ${(title.box.y + title.box.height / 2).toFixed(0)} of ${view.h})`);
+        }
+        good = `the title stands at the top of the stage, above and clear of the worked answer and every other line`;
+        break;
+      }
+      case 'fb-060': {
+        // docs/feedback.md fb-060: asks 2 and 3 wait for ask 1, so they draw nothing: not on stage as controls, no number, no blank, no box
+        const controls = await tab.eval<{ id: string; locked: boolean; parts: string[] }[]>(`window.__stage.controls().filter((c) => c.ask).map((c) => ({ id: c.id, locked: c.askState.locked, parts: c.parts.map((p) => p.part) }))`);
+        const waiting = controls.filter((c) => c.locked);
+        if (waiting.length > 0) problems.push(`${waiting.length} ask(s) that wait are drawn: ${waiting.map((c) => c.id).join(', ')}`);
+        if (controls.map((c) => c.id).join(',') !== 'q1') problems.push(`the asks drawn are ${JSON.stringify(controls.map((c) => c.id))}, wanted only q1`);
+        const boxed = live.filter((e) => e.kind === 'control' && e.id !== 'q1' && e.box.width > 0 && e.box.height > 0);
+        if (boxed.length > 0) problems.push(`${boxed.map((e) => e.id).join(', ')} stand on the stage with a box (${boxed.map((e) => `${e.box.width.toFixed(0)}x${e.box.height.toFixed(0)}`).join(', ')})`);
+        const numbers = texts.filter((e) => /^\d\.$/.test(e.text.trim()));
+        if (numbers.length > 0) problems.push(`a bare number is drawn: ${numbers.map((e) => e.text).join(', ')}`);
+        good = 'only ask 1 is drawn: asks 2 and 3 draw no number, no blank and take no place on the stage';
+        break;
+      }
+      case 'fb-061': {
+        // docs/feedback.md fb-061: `is=6,281,6` (the answer with its thousands comma, and a step of the working) plays as an ask for 6281, and the hint that names a step is kept
+        // (the turn holds every scene's lines, and the ids repeat from one scene to the next: only this scene's own are read)
+        const whole = await tab.eval<string[]>('window.__stage.lines().map((l) => l.text)');
+        const lines = whole.slice(Math.max(0, whole.findIndex((line) => /^scene fb-061\b/.test(line))));
+        const ask = lines.find((line) => /^ask q1\b/.test(line));
+        const accepted = /\bis=(\S+)/.exec(ask ?? '')?.[1];
+        if (ask === undefined) problems.push('the ask q1 did not play');
+        else if (accepted !== '6281') problems.push(`ask q1 accepts "${accepted}", wanted only 6281`);
+        if (!lines.some((line) => /^hint in=q1\b/.test(line))) problems.push('the hint of ask q1 was dropped');
+        const parts = await tab.eval<string[]>(`(window.__stage.controls().find((c) => c.id === 'q1')?.parts ?? []).map((p) => p.part)`);
+        if (!parts.includes('hint')) problems.push('ask q1 has no Hint to tap');
+        good = 'ask q1 accepts the one answer 6281 (the thousands comma kept in its number, the step dropped) and its hint is on it';
+        break;
+      }
       case 'fb-025': {
         // fb-025: an app that reaches for d3 and never says `uses=`: the library is loaded for it (d3-geo too), so the globe is drawn, and nothing it ran threw
         const app = await this.appWhen(tab, 'globe', (one) => one.blank !== null);
@@ -765,10 +837,85 @@ class Screen {
         good = 'the empty frame is told: the host found nothing visible three seconds after it loaded, and the server holds `app fixblank drew nothing` as blocking';
         break;
       }
+      case 'fb-026': {
+        // fb-026: the world's land is real. The app draws `World.land` (the shelf's Natural Earth outlines) with D3; the screenshot is read for its literal colours, where they fall and how much there is
+        // of them. The globe is turned to centre on 30E 10N, so Africa is not the middle pixel.
+        const app = await this.appWhen(tab, 'earth', (one) => one.blank !== null);
+        if (app === null) problems.push('the map app is not running');
+        else {
+          if (!app.loaded) problems.push('the map app never loaded');
+          if (app.crashes > 0) problems.push(`the map app threw ${app.crashes} time${app.crashes === 1 ? '' : 's'}: \`World\` was not in its page`);
+          if (app.blank === true) problems.push('the map app drew nothing');
+        }
+        if (app !== null && app.loaded) problems.push(...(await this.landLooks(tab)));
+        good = 'the globe turned to 30E 10N shows the land: its fill is a good part of the disc, land is where the Congo basin, Zambia, Chad and Arabia are, and sea is where the mid-Atlantic, the Arabian Sea and the Indian Ocean are';
+        break;
+      }
+      case 'fb-026-inferred': {
+        // an app that never named `maps` and reaches for `World.land` is given it, whole and frozen: its block is land-coloured only if so (and the log's `uses-inferred` warning is read in the brief check)
+        const app = await this.appWhen(tab, 'world', (one) => one.blank !== null);
+        if (app === null) problems.push('the world app is not running');
+        else {
+          if (!app.loaded) problems.push('the world app never loaded');
+          if (app.crashes > 0) problems.push(`the world app threw ${app.crashes} time${app.crashes === 1 ? '' : 's'}: \`World\` was not in its page`);
+        }
+        if (app !== null && app.loaded) {
+          const frame = await tab.eval<{ x: number; y: number; w: number; h: number } | null>(
+            `(() => { const f = [...document.querySelectorAll('iframe')].filter((one) => one.style.visibility === 'visible'); if (f.length !== 1) return null; const r = f[0].getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()`,
+          );
+          if (frame === null) problems.push('not one frame is showing, so there is nothing to read');
+          else {
+            const [seen] = await tab.call<(number[] | null)[]>('colourAt', await tab.shot(), [{ x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }], tab.dpr);
+            if (seen === null || seen === undefined || LAND_RGB.reduce((far, channel, at) => far + Math.abs((seen[at] ?? 0) - channel), 0) > 48) problems.push(`the middle of the world app should be the land colour (World.land whole and frozen) and is ${seen === null || seen === undefined ? 'outside the picture' : `rgb(${seen.join(', ')})`}`);
+          }
+        }
+        good = 'the land reached an app that never asked for it: World.land is a MultiPolygon of over a hundred polygons and frozen, so the page shows its land-coloured block';
+        break;
+      }
       default:
         return;
     }
     add(`hard-${id}`, problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? good : problems.join('; '));
+  }
+
+  /**
+   * fb-026: what the screenshot shows of the globe app's frame. The fixture draws the land in LAND_RGB over SEA_RGB, nothing else in either colour. The globe is an orthographic one centred on
+   * 30E 10N (`d3.geoOrthographic().rotate([-30, -10])`, a disc of 0.45 of the frame's shorter side): how much of the middle is land, then the colour at a few points that are land (inland, away
+   * from a coast) and a few that are sea. The problems it found, none when the map is real.
+   */
+  private async landLooks(tab: Tab): Promise<string[]> {
+    const frame = await tab.eval<{ x: number; y: number; w: number; h: number } | null>(
+      `(() => { const f = [...document.querySelectorAll('iframe')].filter((one) => one.style.visibility === 'visible'); if (f.length !== 1) return null; const r = f[0].getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()`,
+    );
+    if (frame === null) return ['not one map frame is showing, so there is nothing to read'];
+    const picture = await tab.shot();
+    const cx = frame.x + frame.w / 2;
+    const cy = frame.y + frame.h / 2;
+    const radius = 0.45 * Math.min(frame.w, frame.h);
+    const where = (lon: number, lat: number): { x: number; y: number } | null => {
+      const rad = Math.PI / 180;
+      const [lon0, lat0] = [30 * rad, 10 * rad];
+      const [l, p] = [lon * rad, lat * rad];
+      if (Math.sin(lat0) * Math.sin(p) + Math.cos(lat0) * Math.cos(p) * Math.cos(l - lon0) <= 0.05) return null;
+      return { x: cx + radius * Math.cos(p) * Math.sin(l - lon0), y: cy - radius * (Math.cos(lat0) * Math.sin(p) - Math.sin(lat0) * Math.cos(p) * Math.cos(l - lon0)) };
+    };
+    const lands: readonly (readonly [string, number, number])[] = [['the Congo basin', 20, 0], ['Zambia', 25, -15], ['Chad', 15, 15], ['Arabia', 45, 25]];
+    const seas: readonly (readonly [string, number, number])[] = [['the mid-Atlantic', -30, 0], ['the Arabian Sea', 62, 12], ['the Indian Ocean', 75, -15]];
+    const problems: string[] = [];
+    // the middle of the picture: the square inside the disc holds a good share of land fill
+    const half = radius / Math.SQRT2;
+    const [share] = await tab.call<number[]>('colourShare', picture, [{ x: cx - half, y: cy - half, w: 2 * half, h: 2 * half }], LAND_RGB, 48, tab.dpr);
+    if ((share ?? 0) < 0.15) problems.push(`only ${(100 * (share ?? 0)).toFixed(1)}% of the middle of the globe is the land fill (a real one is about a third or more)`);
+    const probes = [...lands.map(([name, lon, lat]) => ({ name, lon, lat, want: LAND_RGB, kind: 'land' })), ...seas.map(([name, lon, lat]) => ({ name, lon, lat, want: SEA_RGB, kind: 'sea' }))];
+    const spots = probes.map((probe) => where(probe.lon, probe.lat));
+    const seen = await tab.call<(number[] | null)[]>('colourAt', picture, spots.map((spot) => spot ?? { x: -10, y: -10 }), tab.dpr);
+    probes.forEach((probe, index) => {
+      const got = seen[index];
+      if (spots[index] === null) problems.push(`${probe.name} is not on the visible side of the globe, so the check cannot read it`);
+      else if (got === null || got === undefined) problems.push(`${probe.name} falls outside the picture`);
+      else if (probe.want.reduce((far, channel, at) => far + Math.abs((got[at] ?? 0) - channel), 0) > 48) problems.push(`${probe.name} (${probe.lon}, ${probe.lat}) should be ${probe.kind} and is rgb(${got.join(', ')})`);
+    });
+    return problems;
   }
 
   /** The apps the page's host runs, as it probes them (`window.__stage.apps()`). */
@@ -869,8 +1016,8 @@ class Screen {
     }
     const problems: string[] = [];
     for (const [what, pattern] of wanted) if (!shown.some((fingerprint) => pattern.test(fingerprint))) problems.push(`no brief listed ${what} among its urgent items (${shown.length} urgent item${shown.length === 1 ? '' : 's'} shown over the session)`);
-    // fb-025: the globe's first row that reaches for d3 says so in the log, once, and no other app (they reach for nothing) is said to
-    if (inferred.length !== 1 || !/^row globe \| .*\(charts\)$/.test(inferred[0] as string)) problems.push(`the log should hold one \`uses-inferred\` warning, on a row of the globe, naming charts: ${inferred.length === 0 ? 'none' : inferred.join('; ')}`);
+    // fb-025: the globe's first row that reaches for d3 says so in the log, once; fb-026: so does the world app's first row that reaches for `World`, once; no other app is said to (the rest reach for nothing, or name what they use)
+    if (inferred.length !== 2 || !/^row globe \| .*\(charts\)$/.test(inferred[0] as string) || !/^row world \| .*\(maps\)$/.test(inferred[1] as string)) problems.push(`the log should hold two \`uses-inferred\` warnings, one on a row of the globe naming charts and one on a row of the world app naming maps: ${inferred.length === 0 ? 'none' : inferred.join('; ')}`);
     // the words the brain reads: the digest, made from the logged observations by the shared function
     const digest = attention === null ? '' : digestFull(noted.filter((one) => one.severity === 'blocking'), attention).text;
     if (!/app fixthrow threw: "Error: fixture: thrown on purpose" \(line 8\)/.test(digest)) problems.push(`the digest does not say how the app threw: ${digest.replace(/\s+/g, ' ').slice(0, 200)}`);
@@ -1350,7 +1497,8 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     units.push(screenUnit('follow', 45, [], (run) => run.followScene()));
     // fb-001 (docs/feedback.md): code blocks that did not render in the tour's code chapter. `--only fb-001` is the code demo's judging.
     demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, name === 'code' ? ['fb-001'] : [], (run) => run.demoScenes([name], index === 0))));
-    units.push(screenUnit('demo-hard', 60, [], (run) => run.hardScenes()));
+    // fb-058 to fb-061 (docs/feedback.md): the big-numbers maths turn. `--only fb-059` is the hard group's judging of its own scene (fb-060, fb-061 and fb-058 likewise; the ask and maths groups too)
+    units.push(screenUnit('demo-hard', 60, ['fb-058', 'fb-059', 'fb-060', 'fb-061'], (run) => run.hardScenes()));
   }
   for (const screen of LENS_SCREENS) {
     units.push({
@@ -1407,6 +1555,26 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     run: async (servers, out) => {
       const scenes = await journeyGroup(servers.main as string, join(args.out, 'journey'), args.timeoutMs, plain);
       out.lines.push('\njourney (1280x800, replay brain: typing, a tap, a drag, an undo and rest, with the hook\'s timings)');
+      sceneLines(out, scenes);
+    },
+  });
+  units.push({
+    name: 'fb-055',
+    needs: 'main',
+    weight: 60,
+    run: async (servers, out) => {
+      const scenes = await labelGroup(servers.main as string, join(args.out, 'fb-055'), args.timeoutMs, plain);
+      out.lines.push('\nfb-055 (a label the brain drew is tapped to ask about it: 1280x800 with a mouse, 1180x820 with a finger, the journey\'s fuzzy tap; replay brain)');
+      sceneLines(out, scenes);
+    },
+  });
+  units.push({
+    name: 'fb-064',
+    needs: 'main',
+    weight: 30,
+    run: async (servers, out) => {
+      const scenes = await undoGroup(servers.main as string, join(args.out, 'fb-064'), args.timeoutMs, plain);
+      out.lines.push('\nfb-064 (the Undo chip puts the answer before back with its labels and words, and takes everything of the one it undoes; 1280x800, replay brain)');
       sceneLines(out, scenes);
     },
   });
