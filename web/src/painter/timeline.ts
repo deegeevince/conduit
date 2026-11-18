@@ -97,6 +97,11 @@ export interface TimelineInstant {
   readonly tunes?: ReadonlyMap<string, number | null>;
   /** the turn is closed: a tune that was the last thing said is whole */
   readonly closed?: boolean;
+  /**
+   * MOTION. The stage clock T, in clock units (PLAN-motion): where everything with a `period=`, a ride or a carrier is. Absent: the instant has no clock, and every such thing is
+   * as it was drawn: a draft, a candidate, the snapshot, the sight picture, and every live frame until the page keeps a clock. A loop with no period is decoration and ignores it.
+   */
+  readonly motion?: number;
 }
 
 /**
@@ -2913,7 +2918,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     });
 
     const fault = onFault ?? null;
-    const drawnFigures = figuresAt(boundSchedule(schedule, tq, aq, runtime), base, tq, aq, { viewport, look: drawLook, camera, fit, fitOf: (sceneId) => fitAt(sceneId, tq), reducedMotion, paintings, flashAllowed: allowedFlashes, ...(fault === null ? {} : { onFault: fault }) });
+    const drawnFigures = figuresAt(boundSchedule(schedule, tq, aq, runtime), base, tq, aq, { viewport, look: drawLook, camera, fit, fitOf: (sceneId) => fitAt(sceneId, tq), reducedMotion, paintings, flashAllowed: allowedFlashes, ...(instant.motion === undefined ? {} : { motion: instant.motion }), ...(fault === null ? {} : { onFault: fault }) });
     // A sprite whose colours would vanish into the ground stands on a tile.
     const tiles = tilesFor(drawnFigures.figures, drawLook);
     const figs =
@@ -3141,7 +3146,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
   // The same instant asked of twice (a frame, then a pointer, then the snapshot) is made once, while nothing the hand holds has changed.
   let last: { readonly instant: TimelineInstant; readonly version: number; readonly revision: number; readonly made: ReturnType<typeof compute> } | null = null;
   const cached = (instant: TimelineInstant): ReturnType<typeof compute> => {
-    if (last !== null && last.version === runtime.version && last.revision === runtime.store.revision && last.instant.time === instant.time && last.instant.ambient === instant.ambient && last.instant.wallTime === instant.wallTime && last.instant.clock === instant.clock && last.instant.holdSince === instant.holdSince) return last.made;
+    if (last !== null && last.version === runtime.version && last.revision === runtime.store.revision && last.instant.time === instant.time && last.instant.ambient === instant.ambient && last.instant.wallTime === instant.wallTime && last.instant.clock === instant.clock && last.instant.holdSince === instant.holdSince && last.instant.motion === instant.motion) return last.made;
     const made = compute(instant);
     last = { instant, version: runtime.version, revision: runtime.store.revision, made };
     return made;
