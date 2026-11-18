@@ -110,7 +110,7 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
       const ones = elements.find((e) => partOf(e.key) === 'c:ans-ones')?.text;
       if (tens !== '2' || ones !== '4') problems.push(`${where}: fill 24 put "${tens}" and "${ones}" in the tens and ones`);
     }
-    // 4a. hint (fb-081): the words of a hint, longest of the sum (an exchange takes several lines), stand under the buttons and clear of them
+    // 4a. hint (fb-096): the words of a hint, longest of the sum (an exchange takes several lines), stand under the buttons and clear of them
     if (one.lines.some((text) => /^press \S+ hint$/.test(text))) {
       const hint = elements.find((e) => partOf(e.key) === 'hint');
       const bottoms = figures.filter((f) => partOf(f.key).startsWith('btn:')).map((f) => f.y1);
@@ -192,7 +192,7 @@ export async function startMathsServer(extra: Readonly<Record<string, string>> =
   const scratch = await mkdtemp(join(tmpdir(), 'conduit-maths-'));
   await mkdir(join(scratch, 'skills'), { recursive: true });
   const port = await claimPort('a maths server');
-  // fb-076. A sum that is finished is an act turn for the brain: the replay brain answers it with a pause, so the page holds as it was marked (each act once a session, so many)
+  // fb-091. A sum that is finished is an act turn for the brain: the replay brain answers it with a pause, so the page holds as it was marked (each act once a session, so many)
   const acts = join(scratch, 'acts.json');
   await writeFile(acts, JSON.stringify({ turns: Array.from({ length: 300 }, () => ({ match: 'kind:act', script: 'wait 0.2s' })) }));
   let log = '';
@@ -483,7 +483,7 @@ async function hintScene(mine: MathsTab, dir: string, problems: Problems): Promi
   return { checked, hinted };
 }
 
-/** fb-076. A sum that is finished goes to the brain as an act turn, with how she got there; a wrong try goes to it only as a line to hear with the next. Show me that gives the last box finishes it too. */
+/** fb-091. A sum that is finished goes to the brain as an act turn, with how she got there; a wrong try goes to it only as a line to hear with the next. Show me that gives the last box finishes it too. */
 async function sendScene(mine: MathsTab, problems: Problems): Promise<void> {
   const list = problems['send'] as string[];
   const played = await mine.play(['scene layout=stack mood=calm', 'math m9 column | 1+1'].join('\n'));
@@ -526,7 +526,7 @@ async function sendScene(mine: MathsTab, problems: Problems): Promise<void> {
   await mine.hands.finger([await mine.centre(show.box)]);
   await waitFor('the act turn of the shown sum', 8_000, async () => (turns() > first ? true : null)).catch(() => undefined);
   const told = mine.tab.posted.filter((turn) => turn.kind === 'act').slice(first).map((turn) => turn.text ?? '');
-  // fb-078. A finger on a box or a button works the block and is not also "the user pointed at" it: the brain is told of the acts, not of a tap on a block it cannot name a part of
+  // fb-093. A finger on a box or a button works the block and is not also "the user pointed at" it: the brain is told of the acts, not of a tap on a block it cannot name a part of
   const pointed = await mine.tab.eval<number>(`window.__stage.events().filter((e) => e.type === 'tap' && /^m(9|10)$/.test(e.id)).length`);
   if (pointed !== 0) list.push(`${pointed} finger press(es) on the written method were also told as taps on it ("the user pointed at m9"), wanted none`);
   if (told.length !== 1 || !/^m10: was shown the ones/.test(told[0] ?? '')) list.push(`the Show me that finished the sum sent ${JSON.stringify(told)}, wanted one act "m10: was shown the ones…"`);
@@ -559,6 +559,7 @@ interface PenHook {
   owners(): { stroke: string; key: string; part: string }[];
   free(): string[];
   colours(): string[];
+  hold(on: boolean): void;
 }
 
 /** The pen: no Draw, one stroke owned by its cell, the larger share wins, a finger leaves no ink, the fake reader's digits show and Check marks them, a misread is corrected by a tap and a typed digit. */
@@ -605,6 +606,11 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
   await tab.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await sleep(300);
   if ((await mine.focused()) !== '') list.push(`a palm (a contact 160 wide) took the keyboard into "${await mine.focused()}"`);
+  // The page reads what the pen wrote 800 ms after it lifts, so a number written in one go is read in one request. Here each stroke is written by events that come back late on a
+  // busy machine, and 800 ms can pass between two strokes of one sequence (which a person would also get as two reads, by design). The claim below is about the batching, not about the
+  // wall clock, so the page's pause is held while the sequence is written and let go when it is done (`__penWrite.hold`, for this check only).
+  const hold = (on: boolean): Promise<void> => tab.eval(`window.__penWrite.hold(${on})`);
+  await hold(true);
   // 1. a pen stroke with Draw closed is one stroke, owned by the cell it is in
   await stroke('m4', 'ans-tens', [0.25, 0.2], [0.75, 0.8]);
   if (await hands.drawToggle()) list.push('writing with the pen opened Draw');
@@ -625,6 +631,7 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
   await stroke('m4', 'ans-tens', [0.2, 0.7], [0.8, 0.3]);
   for (const [a, b] of [[[0.2, 0.2], [0.3, 0.8]], [[0.5, 0.2], [0.6, 0.8]], [[0.75, 0.2], [0.8, 0.8]]] as [number, number][][]) await stroke('m4', 'ans-ones', a as [number, number], b as [number, number], 6);
   // it is read once, 800 ms after the pen lifts: both cells in one request, shown small beside the ink
+  await hold(false);
   await wait('the digits to be read into the cells', async () => (await mine.cell('m4', 'ans-ones'))?.read !== '' && (await mine.cell('m4', 'ans-tens'))?.read !== '');
   const done = await reads();
   if (done.length !== 1 || done[0]?.cells !== 2) list.push(`the pen's writing was read in ${done.length} request(s) (${JSON.stringify(done)}), wanted one with both cells`);
@@ -643,6 +650,8 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
   if (q !== '') list.push(q);
   else {
     const before = (await reads()).length;
+    // held, for the reason above: the second stroke has to be unread when Check is tapped, which a pause of 800 ms on a busy machine would not leave
+    await hold(true);
     await stroke('m5', 'ans-ones', [0.25, 0.2], [0.35, 0.8], 6);
     await stroke('m5', 'ans-ones', [0.6, 0.2], [0.7, 0.8], 6);
     const check = (await mine.block('m5'))?.buttons.find((button) => button.name === 'check');
@@ -654,6 +663,7 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
       await wait('Check to mark what the pen wrote', async () => (await mine.cell('m5', 'ans-ones'))?.mark === 'right');
       if ((await reads()).length !== before + 1) list.push(`Check made ${(await reads()).length - before} read request(s), wanted one`);
     }
+    await hold(false);
   }
   // 5. a misread: three strokes are read as 3 where a 4 was meant; a tap opens the cell's input with the 3 selected, a typed 4 wins and the ink dims
   const r = await mine.play(['scene layout=stack mood=calm', 'math m6 column | 12+12'].join('\n'));
@@ -698,7 +708,7 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
     const mixed = (await mine.block('m7'))?.cells.filter((cell) => cell.part !== 'carry-tens').map((cell) => `${cell.part}=${cell.value}:${cell.by}:${cell.mark}`).sort().join(' ');
     if (mixed !== 'ans-ones=4:pen:right ans-tens=2:key:right') list.push(`the pen in the ones and keys in the tens, then Enter, left "${mixed}"`);
   }
-  // 7. fb-082: the working a sum had written leaves with the sum. A new sum under the same id starts clean (no ink owned, none in its boxes), and a scene with no written
+  // 7. fb-097: the working a sum had written leaves with the sum. A new sum under the same id starts clean (no ink owned, none in its boxes), and a scene with no written
   // method takes the ink off as well
   const own = async (id: string): Promise<number> => (await owners()).filter((o) => o.key.startsWith(id)).length;
   const inkA = await mine.play(['scene layout=stack mood=calm', 'math m11 column | 12+12'].join('\n'));

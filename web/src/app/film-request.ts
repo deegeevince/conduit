@@ -1,7 +1,7 @@
 // A video request, made into the film it asks for: which turns, with or without a title card each, the language pane and the input box round the stage as the request leaves
 // them, the caption and the tag over it, a slider the session moved dragged or not. Pure, so the app and the film's checks make the same film from the same request.
 
-import type { VideoRequest } from '../contracts/export';
+import type { FilmTurn, VideoRequest } from '../contracts/export';
 import type { Film, FilmOptions, Recording } from '../contracts/film';
 import { createReel, lastAnswer } from '../painter/reel';
 import type { Reel } from '../painter/reel';
@@ -30,6 +30,8 @@ export interface VideoFilm {
   readonly layout: LangLayout;
   /** a sentence for the person when turns were left out of the front or the last was cut short for the length limit; null otherwise */
   readonly note: string | null;
+  /** where each turn is in the film, before any waits are cut */
+  readonly turns: readonly FilmTurn[];
 }
 
 export function videoFilm(request: VideoRequest, source: VideoSource): VideoFilm {
@@ -42,5 +44,6 @@ export function videoFilm(request: VideoRequest, source: VideoSource): VideoFilm
   const reel = createReel(turns.length > 0 ? turns : [source.recording], options, { cards: conversation && request.cards !== false, maxSeconds: source.maxSeconds, session: true, drag: request.drag === true });
   const note = reel.leftOut > 0 || reel.cut ? `The film holds at most ${source.maxSeconds / 60} minutes: ${reel.leftOut > 0 ? `the first ${reel.leftOut} turn${reel.leftOut === 1 ? '' : 's'} ${reel.leftOut === 1 ? 'is' : 'are'} left out` : 'the last turn is cut short'}` : null;
   const film = withPane(reel, everything.length > 0 ? everything : [source.recording], source.log, layout, { ...(request.captions === undefined ? {} : { captions: request.captions }), ...(request.tag === undefined ? {} : { tag: request.tag }) });
-  return { film, reel, layout, note };
+  const where = reel.parts.filter((part) => !part.card).map((part) => ({ turn: part.turn, from: part.lead?.from ?? part.from, start: part.from, to: part.to }));
+  return { film, reel, layout, note, turns: where };
 }

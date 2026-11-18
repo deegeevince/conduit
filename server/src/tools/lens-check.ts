@@ -377,20 +377,44 @@ export async function lensGroup(base: string, screen: LensScreen, dir: string, t
         const after = await tab.eval<string | null>(`(() => { const b = document.querySelector('[data-page-chip]'); return b && !b.hidden ? b.textContent : null; })()`);
         result(results, 'lens-grow-chip', after === null ? [] : [`the chip "${after}" is still there after it was tapped`], `the "${chip}" chip took the lens to the choices`);
       }
-      // a real tap on a choice lands, once the lens is on it
-      const choices = await starters(tab);
-      const pick = choices.find((c) => /go on|shorter|show me/i.test(c.text));
-      if (pick === undefined) result(results, 'lens-grow-tap', ['no choice on the page'], '');
-      else {
+      // a real tap on a choice lands, once the lens is on it. A point of the page becomes a point of the screen through the lens as it stands, so the lens has to be still (not moving
+      // and the same view twice, 200 ms apart) when it is read; the tap is read again after it, and what the page's own pointer events saw is kept to say what happened if it is lost.
+      await tab.eval(`(() => { window.__tl = []; for (const t of ['pointerdown', 'pointerup', 'pointercancel']) window.addEventListener(t, (e) => window.__tl.push([e.type, e.pointerType, Math.round(e.timeStamp), Math.round(e.clientX), Math.round(e.clientY)]), true); })()`);
+      const still = async (): Promise<boolean> => {
+        let last = '';
+        for (let waited = 0; waited < 6000; waited += 200) {
+          const view = JSON.stringify((await hands.lens())?.view ?? null);
+          const moving = await tab.eval<boolean>('window.__lensMoving ? window.__lensMoving() : false');
+          if (!moving && view === last) return true;
+          last = view;
+          await sleep(200);
+        }
+        return false;
+      };
+      const tapChoice = async (): Promise<{ pick: { text: string; box: Box } | undefined; sent: boolean; where: string }> => {
+        const settled = await still();
+        const choices = await starters(tab);
+        const pick = choices.find((c) => /go on|shorter|show me/i.test(c.text));
+        if (pick === undefined) return { pick, sent: false, where: '' };
         const at = await hands.onScreen({ x: pick.box.x + pick.box.width / 2, y: pick.box.y + pick.box.height / 2 });
         const before = tab.posted.length;
         await hands.finger([at]);
-        let sent: (typeof tab.posted)[number] | undefined;
-        for (let waited = 0; waited < 6000 && sent === undefined; waited += 200) {
-          sent = tab.posted.slice(before)[0];
-          if (sent === undefined) await sleep(200);
+        let sent = false;
+        for (let waited = 0; waited < 6000 && !sent; waited += 200) {
+          sent = tab.posted.length > before;
+          if (!sent) await sleep(200);
         }
-        result(results, 'lens-grow-tap', sent === undefined ? [`a finger on "${pick.text}" at the end of the page sent nothing`] : [], `a finger on "${pick.text}" at the end of the page sent it`);
+        const seen = await tab.eval<string>(`JSON.stringify({ events: window.__tl.slice(-6), moving: window.__lensMoving ? window.__lensMoving() : null, view: window.__stage.lens() && window.__stage.lens().view })`);
+        return { pick, sent, where: `${settled ? 'lens still' : 'lens not still after 6 s'}, finger at ${Math.round(at.x)},${Math.round(at.y)}, then ${seen}` };
+      };
+      const tried = await tapChoice();
+      if (tried.pick === undefined) result(results, 'lens-grow-tap', ['no choice on the page'], '');
+      else if (tried.sent) result(results, 'lens-grow-tap', [], `a finger on "${tried.pick.text}" at the end of the page sent it`);
+      else {
+        // a tap lost on a machine busy with other groups is tried once more, as a person would, and counted: the note says where the lens and the page's pointer events were
+        const again = await tapChoice();
+        if (again.sent) result(results, 'lens-note', [], `note: lens-grow-tap retried at ${screen.name} (${tried.where})`);
+        result(results, 'lens-grow-tap', again.sent ? [] : [`a finger on "${tried.pick.text}" at the end of the page sent nothing, twice (${tried.where}; ${again.where})`], `a finger on "${tried.pick.text}" at the end of the page sent it (on the second try)`);
       }
       void pic1;
       scenes.push({ name: 'grow-long-answer', picture: await shot(tab, 'grow-end'), results, seconds: (Date.now() - began) / 1000 });

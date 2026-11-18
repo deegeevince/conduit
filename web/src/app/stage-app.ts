@@ -2,7 +2,7 @@ import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, p
 import overtureScript from '@conduit/language/demos/overture.series?raw';
 import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, InkMarks, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TourAction, TurnEndReason, TurnInput, TurnSource } from '@conduit/language';
 import type { AppAct, AppHost } from '../contracts/app';
-import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
+import type { ExportJob, ExportRequest, Exporter, FilmTurn } from '../contracts/export';
 import type { ChartHost } from '../contracts/chart';
 import type { StageHook } from '../contracts/hook';
 import { createDocumentView } from './document-view';
@@ -702,6 +702,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         return 'Tidying up the last answer…';
       case 'repaired':
         return 'Tidied';
+      case 'retrying':
+        // (no ellipsis of its own: a short routine status is shown in the message box as "Trying again…")
+        return 'Trying again';
       case 'kept':
       case 'skipped':
         return null;
@@ -956,6 +959,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (event.turn !== currentTurn || event.seq <= lastSeq) return;
         lastSeq = event.seq;
         endStarting();
+        // the second try's first line is the answer arriving: "Trying again…" has done its work
+        if (passState === 'retrying') {
+          passState = null;
+          passInfo = null;
+        }
         const parsed = parseLine(event.text);
         if (parsed.kind === 'line') {
           lang.line(event.turn, event.seq, event.text, event.issues, 0);
@@ -1015,7 +1023,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
           }
           return;
         }
-        if (event.turn !== currentTurn || (!reviewOn && event.state !== 'refining')) return;
+        // (a retry after a turn that drew nothing is said whatever the look-and-fix switch says: it is the answer's own second try, not a look at a draft)
+        if (event.turn !== currentTurn || (!reviewOn && event.state !== 'refining' && event.state !== 'retrying')) return;
         if (!firstTime(`pass:${event.turn}:${event.pass}:${event.state}`)) return;
         passState = event.state;
         passInfo = { pass: event.pass, of: event.of ?? null, reason: event.reason };
@@ -1054,7 +1063,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (event.turn !== currentTurn) return;
         endStarting();
         // a tap or a question that ended with nothing drawn and no document opened is not left looking dead: what the brain said, or that nothing came, is shown
-        if (event.reason === 'done' && ['tap', 'prompt'].includes(turnInputs.get(event.turn)?.kind ?? '') && !showedSomething.has(event.turn)) announce(repliedWith.get(event.turn) ?? 'Nothing new came back for that.');
+        // (the server's own account comes first when it asked the brain a second time and still nothing was drawn: fb-075)
+        if (event.reason === 'done' && event.message !== null && event.message !== '' && ['tap', 'prompt', 'act'].includes(turnInputs.get(event.turn)?.kind ?? '')) announce(event.message);
+        else if (event.reason === 'done' && ['tap', 'prompt'].includes(turnInputs.get(event.turn)?.kind ?? '') && !showedSomething.has(event.turn)) announce(repliedWith.get(event.turn) ?? 'Nothing new came back for that.');
         showedSomething.delete(event.turn);
         repliedWith.delete(event.turn);
         if (event.reason === 'done' && drawnTurns.has(event.turn) && turnInputs.get(event.turn)?.kind !== 'demo') {
@@ -1638,7 +1649,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         mathDowns.set(event.pointerId, at);
         // the browser's own mouse events after a touch would move the focus to the canvas, away from the cell the tap puts the keyboard in
         event.preventDefault();
-        // fb-078. A finger on a box, Check, Hint or a cross works the written method and is nothing else: it is not also a tap "at" the block the brain is told of
+        // fb-093. A finger on a box, Check, Hint or a cross works the written method and is nothing else: it is not also a tap "at" the block the brain is told of
         // (a Pencil's tap already was not: `penPress`)
         return;
       }
@@ -1984,11 +1995,13 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     const filmOptions = { apps: true, reducedMotion: snap.reducedMotion, arrival: 'at-once' as const, ...(request.kind === 'video' ? {} : { controls: held }), data: Object.fromEntries(dataTables) };
     let film: Film;
     let reelNote: string | null = null;
+    let reelTurns: readonly FilmTurn[] | null = null;
     if (request.kind === 'video') {
       // A film is the session as it ran: the language pane beside the stage and the input box along the bottom (each unless the request leaves it out), the stage laid out in the room they leave.
       const made = videoFilm(request, { recording, recordings: painter.recordings(), log: lang, options: filmOptions, maxSeconds: REEL_MAX_SECONDS });
       film = made.film;
       reelNote = made.note;
+      reelTurns = made.turns;
     } else film = createFilm(recording, { ...filmOptions, viewport: request.kind === 'script' ? snap.viewport : { width: request.width, height: request.height, dpr: 1 } });
     // A film is not touched by a second job: the exporter refuses it, and the one still running keeps the status line.
     const refused = exporting !== null && request.kind !== 'script' && !(request.kind === 'still' && request.format === 'svg');
@@ -2016,7 +2029,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         ),
     );
     publishStatus();
-    return reelNote === null ? job : { ...job, done: job.done.then((made) => ({ ...made, note: reelNote })) };
+    return reelNote === null && reelTurns === null ? job : { ...job, done: job.done.then((made) => ({ ...made, ...(reelNote === null ? {} : { note: reelNote }), ...(reelTurns === null ? {} : { turns: reelTurns }) })) };
   }
 
   /** how each turn was opened, so the answer kept for a reload can say what it answered */

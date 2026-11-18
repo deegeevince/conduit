@@ -196,7 +196,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
   // ----------------------------------------------------------------------------------------------------------------------------- whose strokes
   /** every stroke the ink holds, and the cell it was given to (null: free working) */
   const owner = new Map<string, { key: string; part: string } | null>();
-  /** the sum each owned stroke was written under (fb-082): a stroke belongs to a sum, not only to a block's id, which a later sum may take again */
+  /** the sum each owned stroke was written under (fb-097): a stroke belongs to a sum, not only to a block's id, which a later sum may take again */
   const sumOf = new Map<string, string>();
   const version = new Map<string, number>();
   const dirty = new Set<string>();
@@ -255,8 +255,11 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     window.clearTimeout(timer);
     timer = undefined;
   }
+  /** for the browser check only (`__penWrite.hold`): while held, the pause that starts a read never begins, so what a test writes is read together whatever the machine's speed */
+  let held = false;
   function schedule(): void {
     clearTimer();
+    if (held) return;
     timer = window.setTimeout(() => void flush(), READ_AFTER_MS);
   }
 
@@ -385,6 +388,17 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     owners: (): { stroke: string; key: string; part: string }[] => [...owner].flatMap(([stroke, own]) => (own === null ? [] : [{ stroke, key: own.key, part: own.part }])),
     free: (): string[] => [...owner].flatMap(([stroke, own]) => (own === null ? [stroke] : [])),
     colours: (): string[] => model.strokes.map((stroke) => stroke.color),
+    /**
+     * The read waits 800 ms after the pen lifts, so a person who writes a number in one go has it read in one request. A browser check that writes several strokes on a machine
+     * that is busy cannot keep to that: each stroke's events come back late, the pause runs out between two strokes, and the strokes are read in pieces. A person who
+     * stops for a second does get a read of each piece (that is the design: it cannot know they have finished), so this is a hold for the check alone, not a change to what a person meets.
+     * `hold(true)` stops the pause from starting; `hold(false)` lets it begin, from now, if there is ink to read.
+     */
+    hold: (on: boolean): void => {
+      held = on;
+      if (held) clearTimer();
+      else if (dirty.size > 0 && downs.size === 0) schedule();
+    },
   };
 
   return {
@@ -394,7 +408,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     },
     flush,
     sync(views) {
-      // fb-082. The working a sum had written leaves with the sum: ink owned by a block that is no longer on the stage, or that now works another sum under the same id, is taken off
+      // fb-097. The working a sum had written leaves with the sum: ink owned by a block that is no longer on the stage, or that now works another sum under the same id, is taken off
       const stale = model.strokes.filter((stroke) => {
         const own = owner.get(stroke.id);
         if (own == null) return false;

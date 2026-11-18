@@ -33,7 +33,7 @@ const SUMS: readonly (readonly string[])[] = [
   ['math m11 column | 12+12+12+12+12+12', 'type m11.ans-ones | 2', 'type m11.ans-tens | 7'],
   ['math m12 column | 12+12', 'type m12.ans-ones | 4', 'type m12.ans-tens | 9', 'press m12 check'],
   ['math m10 groups | 12 ÷ 3'],
-  // fb-081: Hint says its step in a line of its own under the buttons: the longest one (an exchange) stands there whole, clear of the buttons
+  // fb-096: Hint says its step in a line of its own under the buttons: the longest one (an exchange) stands there whole, clear of the buttons
   ['math m13 column | 503 - 278', 'press m13 hint'],
 ];
 

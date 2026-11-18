@@ -105,7 +105,7 @@ export function replyFromTurn(turn: ConversationTurn): Reply {
 /** The two messages a past turn made. */
 export function messagesOfTurn(turn: ConversationTurn): [UserMessage, ReplyMessage] {
   const failed = turn.end === 'failed' || turn.end === 'timeout';
-  const note = failed ? (turn.message ?? 'The reply did not finish.') : turn.end === 'interrupted' ? 'Stopped before it finished.' : null;
+  const note = failed ? (turn.message ?? 'The reply did not finish.') : turn.end === 'interrupted' ? 'Stopped before it finished.' : turn.end === 'done' && turn.message !== null && turn.message !== '' ? turn.message : null;
   return [
     {
       role: 'user',

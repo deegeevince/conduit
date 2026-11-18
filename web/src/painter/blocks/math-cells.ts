@@ -310,7 +310,7 @@ export function check(run: MathRun): MathAct | null {
   run.hintText = '';
   run.verdict = wrong === 0 ? 'right' : 'wrong';
   bump(run);
-  // fb-076. A sum that is done is told to the brain with how she got there: the wrong checks (and what was wrong), and the hints
+  // fb-091. A sum that is done is told to the brain with how she got there: the wrong checks (and what was wrong), and the hints
   const finished = wrong === 0 ? [...(run.wrongs > 0 ? [`${run.wrongs} wrong check${run.wrongs === 1 ? '' : 's'} (${run.slips.join(', ')})`] : []), ...(run.hints > 0 ? [`${run.hints} hint${run.hints === 1 ? '' : 's'}`] : [])] : [];
   const after = finished.length > 0 ? `, after ${finished.join(' and ')}` : '';
   return { text: wrong === 0 && !parts.some((part) => /wrong/.test(part)) ? `${run.id}: all right${after}` : `${run.id}: ${parts.join(', ')}`, value: wrong === 0 ? 'right' : 'wrong' };

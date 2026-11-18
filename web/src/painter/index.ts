@@ -1587,7 +1587,7 @@ export function createPainter(options: PainterOptions): Painter {
     lastMathSignature = signature;
     emit('math', views);
   };
-  /** fb-076. A hand's act on a written method is told to the brain; the one that finishes the sum (Check found every box right, or Show me gave the last) is also the next turn's input, as an ask's last answer is */
+  /** fb-091. A hand's act on a written method is told to the brain; the one that finishes the sum (Check found every box right, or Show me gave the last) is also the next turn's input, as an ask's last answer is */
   const sayMath = (run: cells.MathRun, act: cells.MathAct, finishes = false): void => {
     emitBack({ type: 'control', turn: turn === null ? null : turn.id, id: run.id, value: act.value, text: act.text, playhead: clock.read().playhead, send: finishes && (run.verdict === 'right' || run.verdict === 'shown'), ask: true });
   };

@@ -322,7 +322,7 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
   const stepper = hasOwnStepper(math) ? unitY * 0.7 : 0;
   // a block with cells to write in keeps a row for Check, Hint and Show me under its digits, and a line for a hint: always, so that nothing moves when they are used
   const buttonsH = inputs.size > 0 ? MIN_TARGET + 14 : 0;
-  // fb-081. The line a hint is said in is as tall as the longest hint of this sum needs at the width it is said in (an exchange takes several lines), so that the words stand
+  // fb-096. The line a hint is said in is as tall as the longest hint of this sum needs at the width it is said in (an exchange takes several lines), so that the words stand
   // under the buttons, never over them, and still nothing moves when a hint is used
   const hintBoxW = Math.min(Math.max(room.width, width), Math.max(width, HINT_WIDTH));
   const hintTall = inputs.size > 0 ? Math.max(...inputCells(grid).map((cell) => input.measure(hintFor(grid, cell), spec('s' as Size, shrink), hintBoxW).height)) : 0;

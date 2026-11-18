@@ -1,8 +1,9 @@
 // Checks of the owner's feedback that the language settles (docs/feedback.md), each named by its row. Run by `pnpm timeline`.
 //
 //   fb-058  the brain is taught the `math` line for a column sum (no digits placed by hand), it is carried when the words are the owner's, and it never holds the answer
-//   fb-075  a photographed question is shown first with a callout on each number it gives, then worked as a `math` line; a finished sum comes back as an act the brain is
+//   fb-090  a photographed question is shown first with a callout on each number it gives, then worked as a `math` line; a finished sum comes back as an act the brain is
 //           taught to answer with one next question (the chapter, carried with a photo for the owner's words)
+//   fb-008  a markdown bullet or numbered item that is no Series ("- **Mercury** …", "* x", "1. First") is said as text, marker and emphasis off, with a warning that says so, not refused
 //   fb-061  an `ask` accepts the ways of writing ONE answer: a thousands comma or space is part of a number; a step of the working that was listed with the answer is
 //           dropped with a reason; a hint is refused only when it shows what the ask really accepts
 //
@@ -23,6 +24,7 @@ import {
   matchAnswer,
   parseLine,
   parseScript,
+  LineReader,
   textHolds,
 } from '../src/index';
 import type { TechniqueCard, TurnContext } from '../src/index';
@@ -75,10 +77,10 @@ function fb058(): void {
   expect('fb-058: the chapter teaches the math line', [chapter.includes('`math m1 column|times|split|bond'), chapter.includes('[worked]'), chapter.includes('blank=all')], [true, true, true]);
   expect('fb-058: the chapter says the painter computes the digits and the brain writes none', [/never digits you place/.test(chapter), /painter computes every digit/.test(chapter), /seals the answer/.test(chapter)], [true, true, true]);
   expect('fb-058: the chapter names the parts and where they work', [chapter.includes('m1.carry-tens'), chapter.includes('near='), chapter.includes('`hit`'), chapter.includes('mark=box'), chapter.includes('`fill m1 |')], [true, true, true, true, true]);
-  // the hand-placed recipe is gone: no coordinates for digits, no right edge, no mono face, no free layout (a figure scene on a square canvas is the photo's, fb-075)
+  // the hand-placed recipe is gone: no coordinates for digits, no right edge, no mono face, no free layout (a figure scene on a square canvas is the photo's, fb-090)
   expect('fb-058: the chapter teaches no hand-placed column', /align=right|face=mono|layout=free|a row every 10|path.*rule/.test(chapter), false);
   expect('fb-058: the chapter does not teach `problem` or the workspace', /\bproblem\b|workspace/i.test(chapter), false);
-  // the brief stays short (it was 1,348 characters; fb-075 added the photo and the finished act, and the room the working needs, 800 more)
+  // the brief stays short (it was 1,348 characters; fb-090 added the photo and the finished act, and the room the working needs, 800 more)
   expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 2200, true);
   // and it is carried for the owner's own words (they hold no digit and none of the old cue words), and by the maths card
   expect('fb-058: the owner\'s sentence is read as a maths question', asksForMaths(SENTENCE), true);
@@ -106,19 +108,19 @@ function fb058(): void {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// fb-075: a photographed question is shown with a callout on each number, then worked; a finished sum comes back as an act and is answered
+// fb-090: a photographed question is shown with a callout on each number, then worked; a finished sum comes back as an act and is answered
 
-function fb075(): void {
+function fb090(): void {
   const chapter = MATHS_CHAPTER;
-  expect('fb-075: the chapter teaches the photo first, a callout on each number it gives, then the working', [chapter.includes('canvas=square'), chapter.includes('`pic p1 from=u1`'), chapter.includes('callout at=x,y in=p1'), chapter.includes('`wait 3`'), chapter.includes('`scene stack` with the working')], [true, true, true, true, true]);
-  expect('fb-075: the chapter says a finished block is an act, answered with one next question and not the working again', [chapter.includes('m1: all right, after 1 wrong check'), /ONE next small question/.test(chapter), /never the working again/.test(chapter)], [true, true, true]);
-  expect('fb-075: the chapter keeps the words above the working to a title and three short lines, and gives a new sum a new id', [/title and at most three short lines/.test(chapter), chapter.includes('a new sum is a new id')], [true, true]);
+  expect('fb-090: the chapter teaches the photo first, a callout on each number it gives, then the working', [chapter.includes('canvas=square'), chapter.includes('`pic p1 from=u1`'), chapter.includes('callout at=x,y in=p1'), chapter.includes('`wait 3`'), chapter.includes('`scene stack` with the working')], [true, true, true, true, true]);
+  expect('fb-090: the chapter says a finished block is an act, answered with one next question and not the working again', [chapter.includes('m1: all right, after 1 wrong check'), /ONE next small question/.test(chapter), /never the working again/.test(chapter)], [true, true, true]);
+  expect('fb-090: the chapter keeps the words above the working to a title and three short lines, and gives a new sum a new id', [/title and at most three short lines/.test(chapter), chapter.includes('a new sum is a new id')], [true, true]);
   const card: TechniqueCard = { id: 'seed:teach-young-learner', title: 'A maths question to work out', when: 'a child needs help with a maths question', example: ['scene stack', 'say title | Flowers', 'ask a1 is=12 | How many flowers? __'] };
   const brief = buildTurnBrief({ ...contextWith([card]), photos: { u1: 0.8 } }, { kind: 'prompt', text: "Help me work this out, don't tell me the answer", images: ['u1'] });
-  expect('fb-075: the brief for a photographed question carries the photo lesson and the photo\'s own frame', [brief.includes('A PHOTO of the question'), brief.includes('`say callout at=52,18 in=<pic id>')], [true, true]);
+  expect('fb-090: the brief for a photographed question carries the photo lesson and the photo\'s own frame', [brief.includes('A PHOTO of the question'), brief.includes('`say callout at=52,18 in=<pic id>')], [true, true]);
   const taught = played(['scene layout=figure canvas=square', 'pic p1 from=u1 aspect=0.8', 'say c1 callout at=43,32 in=p1 | 503 apples at the start', 'say c2 callout at=16,38 in=p1 | 278 sold', 'wait 3', 'scene stack', 'say title | 503 apples, 278 sold', 'math m1 column | 503 - 278']);
-  expect('fb-075: what the chapter teaches plays with nothing refused or said', [taught.refused, taught.said], [[], []]);
-  expect('fb-075: ...and it is the photo, the callouts, then the working', taught.lines, ['scene', 'pic', 'say', 'say', 'wait', 'scene', 'say', 'math']);
+  expect('fb-090: what the chapter teaches plays with nothing refused or said', [taught.refused, taught.said], [[], []]);
+  expect('fb-090: ...and it is the photo, the callouts, then the working', taught.lines, ['scene', 'pic', 'say', 'say', 'wait', 'scene', 'say', 'math']);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -183,10 +185,55 @@ function fb061(): void {
   expect('fb-061: the rest of a spaced answer is told it has no place in the list', spaced.said.some((issue) => /has no spaces/.test(issue)), true);
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// fb-008: the brain wrote a list in markdown; every bullet was refused and nothing of it reached the stage
+
+/** The lines the reader (as the brain's stream is read) makes of raw text: what was said, what was refused, and the codes of the warnings */
+function readRaw(raws: readonly string[]): { readonly said: readonly string[]; readonly refused: readonly string[]; readonly codes: readonly string[] } {
+  const reader = new LineReader();
+  const said: string[] = [];
+  const refused: string[] = [];
+  const codes: string[] = [];
+  for (const raw of raws) {
+    const result = reader.read(raw);
+    if (result.kind === 'reject') refused.push(raw);
+    if (result.kind !== 'line') continue;
+    if (result.line.verb === 'say') said.push(result.line.text);
+    codes.push(...result.issues.filter((issue) => issue.severity === 'warn').map((issue) => issue.code));
+  }
+  return { said, refused, codes };
+}
+
+function fb008(): void {
+  // the owner's list, as it was written: every line was refused
+  const planets = readRaw(['- **Mercury** go round 8 times (about 88 days per orbit)', '- **Venus** go round about 3 times', '- **Uranus and Neptune** barely move']);
+  expect('fb-008: a list of bold names is said, marker and emphasis off', planets.said, ['Mercury go round 8 times (about 88 days per orbit)', 'Venus go round about 3 times', 'Uranus and Neptune barely move']);
+  expect('fb-008: and none of it is refused', planets.refused, []);
+  expect('fb-008: and each says it was only said as text, so it is told and logged', planets.codes, ['said-as-text', 'said-as-text', 'said-as-text']);
+  // every marker the brain writes a list with
+  expect('fb-008: a star, a bullet point and numbers are markers too', readRaw(['* one thing', '\u2022 another thing', '1. First step', '2) Second step', '12. Twelfth step']).said, ['one thing', 'another thing', 'First step', 'Second step', 'Twelfth step']);
+  // a bullet of one word is still something the brain said
+  expect('fb-008: a one-word bullet is said', readRaw(['- Mercury']).said, ['Mercury']);
+  // the emphasis marks go; the underscores of a name do not
+  expect('fb-008: bold, italic, struck and code marks are taken off', readRaw(['- __bold__ and *italic* and _slanted_ and ~~gone~~ and `code`']).said, ['bold and italic and slanted and gone and code']);
+  expect('fb-008: the underscores inside a name stay', readRaw(['- the snake_case_name is kept']).said, ['the snake_case_name is kept']);
+  // what is not a bullet is not touched
+  expect('fb-008: a rule, a lone marker and a minus sign are still refused', readRaw(['---', '- ', '- - -', '-3 apples']).said, []);
+  expect('fb-008: a bullet before a real line is that line, as it always was', readRaw(['- say | hi there']).said, ['hi there']);
+  expect('fb-008: a bullet whose first word is a verb it cannot be read as is still refused, not made words', readRaw(['- circle c1 to the left']).said, []);
+  expect('fb-008: a line that starts with a number but is no list item is not a bullet (it is refused, as before)', readRaw(['3.5 million people live there', '2024. A year']).said, []);
+  // a bullet inside a table or a block of code is the block's own row, never a bullet
+  expect('fb-008: a table row that begins with a dash stays a row', readRaw(['table t1 | Name | Value', '- | 3']).said, []);
+  // a sentence said as text is told the same way, so the conductor can tell the brain's own words from a rescue
+  expect('fb-008: a sentence with no verb is said as text with the same code', readRaw(['The planets still are not labelled, so they are coloured dots.']).codes, ['said-as-text']);
+  expect('fb-008: words the brain wrote with `say |` carry no such code', readRaw(['say | The planets are dots.']).codes, []);
+}
+
 /** Run by `pnpm timeline`. */
 export function feedbackChecks(): boolean {
   fb058();
-  fb075();
+  fb090();
+  fb008();
   fb061();
   process.stdout.write(`\nfeedback checks: ${passed} held${ok ? '' : ', some failed'}\n`);
   return ok;

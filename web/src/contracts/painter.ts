@@ -146,7 +146,7 @@ export interface MathButtonView {
 export interface MathBlockView {
   readonly key: string;
   readonly id: string;
-  /** the sum it is working, as the line wrote it: a later sum under the same id is a new block with none of the old one's pen ink (fb-082) */
+  /** the sum it is working, as the line wrote it: a later sum under the same id is a new block with none of the old one's pen ink (fb-097) */
   readonly sum: string;
   /** how Check last found it */
   readonly verdict: 'open' | 'wrong' | 'right' | 'shown';
