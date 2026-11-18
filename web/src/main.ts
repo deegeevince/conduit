@@ -238,6 +238,17 @@ async function start(): Promise<void> {
   (window as unknown as { __inkDoc?: () => unknown }).__inkDoc = () => stageInk?.ink.document();
   (window as unknown as { __inkClear?: () => void }).__inkClear = () => stageInk?.ink.reset();
   (window as unknown as { __inkStrokes?: () => number }).__inkStrokes = () => stageInk?.ink.model.strokes.length ?? 0;
+  // the picture the brain would be sent for what is drawn (the ink over the stage's picture, or on white when the stage's could not be taken), as a data URL: for the browser check
+  (window as unknown as { __inkPicture?: () => Promise<string | null> }).__inkPicture = async () => {
+    const made = await stageInk?.ink.picture();
+    if (made === null || made === undefined) return null;
+    return await new Promise<string | null>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(made.blob);
+    });
+  };
   mountActions(promptBar.extra, mounted, transcript, stageHost, { top: promptBar.top, menu: promptBar.menu });
   mountSound(promptBar.top, mounted);
   picker = mountPicker(promptBar.menu, mounted);

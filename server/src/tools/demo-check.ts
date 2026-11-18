@@ -195,6 +195,69 @@ export async function checkAxisTags(tab: Tab): Promise<string[]> {
   return problems.slice(0, 4);
 }
 
+/**
+ * fb-006. The language view is switched on and off five times in quick succession (the real menu entry, "Show the language", is pressed from inside the page), and one more time if that
+ * leaves it off. After every press the line over the stage's lower edge (the status pill) must be centred on the stage's column as the press leaves the page: a microtask after the click,
+ * in the next task (where a DevTools call, a timer or an event handler looks, with no frame between), once a frame has been drawn, and 300 ms after the press. The stage is also checked to have moved
+ * (with the pane on and room for it beside the stage, the stage's left edge is past the pane's). The line must be up throughout: it is while a demo plays.
+ * Nothing waits for a frame before looking, and nothing is tried again: a pill that is placed by a frame's observer alone fails the first two looks every time.
+ */
+export async function checkPillThroughToggles(tab: Tab, presses = 5): Promise<string[]> {
+  type Look = { up: boolean; lang: boolean; left: number; centre: number; middle: number };
+  type Press = { n: number; from: boolean; to: boolean; wide: boolean; probes: Record<string, Look> };
+  const done = await tab.eval<{ error?: string; presses?: Press[] }>(`(async () => {
+    const app = document.getElementById('app');
+    const item = document.querySelector('[data-item="lines"]');
+    if (!app || !item) return { error: 'the menu has no "Show the language" entry to press' };
+    const later = (ms) => new Promise((r) => setTimeout(r, ms));
+    const frame = () => new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 250); });
+    const look = () => {
+      const s = document.getElementById('stage').getBoundingClientRect();
+      const t = document.querySelector('.prompt__top');
+      const lang = app.dataset.lang === 'on';
+      const up = !!t && !t.hidden && t.offsetParent !== null && t.getBoundingClientRect().width > 0;
+      const r = up ? t.getBoundingClientRect() : null;
+      return { up, lang, left: s.left, centre: r ? r.left + r.width / 2 : 0, middle: s.left + s.width / 2 };
+    };
+    const rows = [];
+    const settling = [];
+    const press = async (n) => {
+      const from = app.dataset.lang === 'on';
+      item.click();
+      const row = { n, from, to: app.dataset.lang === 'on', wide: innerWidth > 720, probes: {} };
+      rows.push(row);
+      settling.push(later(300).then(() => { row.probes.settled = look(); }));
+      await Promise.resolve();
+      row.probes.microtask = look();
+      await later(0);
+      row.probes.task = look();
+      await frame();
+      await frame();
+      row.probes.frame = look();
+    };
+    for (let n = 1; n <= ${presses}; n += 1) {
+      await press(n);
+      await later(40);
+    }
+    if (app.dataset.lang !== 'on') await press(${presses + 1});
+    await Promise.all(settling);
+    return { presses: rows };
+  })()`);
+  if (done.error !== undefined) return [done.error];
+  const problems: string[] = [];
+  const when: Record<string, string> = { microtask: 'a microtask after the press', task: 'in the next task', frame: 'once a frame had been drawn', settled: '300 ms after the press' };
+  for (const press of done.presses ?? []) {
+    const what = `press ${press.n} (${press.to ? 'opening' : 'closing'} the language view)`;
+    if (press.to === press.from) problems.push(`${what}: the menu entry did not switch the language view`);
+    for (const [name, look] of Object.entries(press.probes)) {
+      if (press.wide && name === 'microtask' && (look.lang ? look.left <= 0 : look.left !== 0)) problems.push(`${what}: the stage's left edge is ${Math.round(look.left)} with the pane ${look.lang ? 'on' : 'off'}`);
+      if (!look.up) problems.push(`${what}, ${when[name]}: the line over the stage was not up`);
+      else if (Math.abs(look.centre - look.middle) > 2) problems.push(`${what}, ${when[name]}: the status pill is centred at ${Math.round(look.centre)}, the stage's middle is ${Math.round(look.middle)}`);
+    }
+  }
+  return problems.slice(0, 4);
+}
+
 /** fb-006. The line over the stage's lower edge (the status pill) is centred on the stage's column, and is one line. Nothing to check while it is not shown. */
 export async function checkPill(tab: Tab): Promise<string[]> {
   const stage = await hostBox(tab);
@@ -207,4 +270,63 @@ export async function checkPill(tab: Tab): Promise<string[]> {
     if (pill.height > 44) problems.push(`the status pill is ${Math.round(pill.height)} px tall: more than one line, so it outgrows the room the stage keeps for it`);
   }
   return problems.slice(0, 3);
+}
+
+/**
+ * fb-071. The columns of a chart as a person sees them, in pixels: a picture of the page, the chart's box cut out, and in it the runs of the bars' colour, left to right, each as its
+ * height in CSS pixels (the middle of the bar, where a label or an edge does not reach). `colour` is the bars' own: with none given, it is the commonest saturated colour in the box
+ * (read it when the bars are tall), and it is handed back to be given at the next reading, when a bar may be too low to be the commonest thing there. A string says why nothing could be read.
+ */
+export async function chartBars(tab: Tab, id: string, colour: readonly number[] | null): Promise<{ readonly heights: readonly number[]; readonly colour: readonly number[]; readonly box: Box } | string> {
+  const chart = await tab.eval<{ box: Box } | null>(`(() => { const c = window.__stage.charts().find((n) => n.id === ${JSON.stringify(id)}); return c ? { box: c.box } : null; })()`);
+  if (chart === null) return `no chart ${id} on stage`;
+  const host = await hostBox(tab);
+  const picture = await tab.shot();
+  const read = await tab.eval<{ heights: number[]; colour: number[] } | string>(`(async () => {
+    const img = new Image();
+    img.src = ${JSON.stringify(picture)};
+    await img.decode();
+    const k = img.width / innerWidth;
+    const region = { x: Math.max(0, Math.round((${host.x} + ${chart.box.x}) * k)), y: Math.max(0, Math.round((${host.y} + ${chart.box.y}) * k)) };
+    region.w = Math.min(img.width - region.x, Math.round(${chart.box.width} * k));
+    region.h = Math.min(img.height - region.y, Math.round(${chart.box.height} * k));
+    const c = document.createElement('canvas');
+    c.width = region.w;
+    c.height = region.h;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, region.x, region.y, region.w, region.h, 0, 0, region.w, region.h);
+    const d = g.getImageData(0, 0, region.w, region.h).data;
+    const w = region.w;
+    const h = region.h;
+    let best = ${colour === null ? 'null' : JSON.stringify([...colour])};
+    if (best === null) {
+      const tally = new Map();
+      for (let i = 0; i < d.length; i += 4) {
+        if (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) < 40) continue;
+        const key = (d[i] >> 4) + ',' + (d[i + 1] >> 4) + ',' + (d[i + 2] >> 4);
+        tally.set(key, (tally.get(key) || 0) + 1);
+      }
+      let most = 0;
+      for (const [key, n] of tally) if (n > most) { most = n; best = key.split(',').map(Number); }
+      if (best === null) return 'no pixel of any colour in the chart';
+    }
+    const near = (i) => Math.abs((d[i] >> 4) - best[0]) <= 1 && Math.abs((d[i + 1] >> 4) - best[1]) <= 1 && Math.abs((d[i + 2] >> 4) - best[2]) <= 1;
+    const column = new Array(w).fill(0);
+    for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) if (near((y * w + x) * 4)) column[x] += 1;
+    const heights = [];
+    let x = 0;
+    while (x < w) {
+      if (column[x] === 0) { x += 1; continue; }
+      let end = x;
+      while (end < w && column[end] > 0) end += 1;
+      if (end - x >= 6 * k) {
+        const quarter = Math.floor((end - x) / 4);
+        const middle = column.slice(x + quarter, end - quarter).sort((a, b) => a - b);
+        heights.push(Math.round((middle[middle.length >> 1] / k) * 10) / 10);
+      }
+      x = end;
+    }
+    return { heights, colour: best };
+  })()`);
+  return typeof read === 'string' ? read : { heights: read.heights, colour: read.colour, box: chart.box };
 }

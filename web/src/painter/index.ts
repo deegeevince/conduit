@@ -1577,7 +1577,7 @@ export function createPainter(options: PainterOptions): Painter {
         const at = mathBox(placed, `${placed.key}@btn:${name}`);
         return at === null ? [] : [{ name, label: name === 'check' ? 'Check' : name === 'hint' ? 'Hint' : 'Show me', box: at }];
       });
-      out.push({ key: placed.key, id: run.id, verdict: run.verdict, box: whole, cells: views, buttons, hint: run.hintText });
+      out.push({ key: placed.key, id: run.id, sum: run.math.sum, verdict: run.verdict, box: whole, cells: views, buttons, hint: run.hintText });
     }
     return out;
   };
@@ -1585,13 +1585,14 @@ export function createPainter(options: PainterOptions): Painter {
   const announceMath = (): void => {
     const views = mathViewsNow();
     if (views.length === 0 && lastMathSignature === '') return;
-    const signature = JSON.stringify(views.map((view) => [view.key, view.verdict, view.hint, view.cells.map((cell) => [cell.part, Math.round(cell.box.x), Math.round(cell.box.y), Math.round(cell.box.width), Math.round(cell.box.height), cell.value, cell.mark, cell.lit, cell.active, cell.read, cell.reading, cell.ink, cell.dim]), view.buttons.map((button) => [button.name, Math.round(button.box.x), Math.round(button.box.y)])]));
+    const signature = JSON.stringify(views.map((view) => [view.key, view.sum, view.verdict, view.hint, view.cells.map((cell) => [cell.part, Math.round(cell.box.x), Math.round(cell.box.y), Math.round(cell.box.width), Math.round(cell.box.height), cell.value, cell.mark, cell.lit, cell.active, cell.read, cell.reading, cell.ink, cell.dim]), view.buttons.map((button) => [button.name, Math.round(button.box.x), Math.round(button.box.y)])]));
     if (signature === lastMathSignature) return;
     lastMathSignature = signature;
     emit('math', views);
   };
-  const sayMath = (run: cells.MathRun, act: cells.MathAct): void => {
-    emitBack({ type: 'control', turn: turn === null ? null : turn.id, id: run.id, value: act.value, text: act.text, playhead: clock.read().playhead, send: false, ask: true });
+  /** fb-091. A hand's act on a written method is told to the brain; the one that finishes the sum (Check found every box right, or Show me gave the last) is also the next turn's input, as an ask's last answer is */
+  const sayMath = (run: cells.MathRun, act: cells.MathAct, finishes = false): void => {
+    emitBack({ type: 'control', turn: turn === null ? null : turn.id, id: run.id, value: act.value, text: act.text, playhead: clock.read().playhead, send: finishes && (run.verdict === 'right' || run.verdict === 'shown'), ask: true });
   };
   /** the typeset formulas standing on the stage now, from the views of the structures that hold them */
   const formulasNow = (): FormulaView[] =>
@@ -2135,7 +2136,7 @@ export function createPainter(options: PainterOptions): Painter {
       if (name === 'check') {
         const act = cells.check(run);
         mathChanged();
-        if (act !== null) sayMath(run, act);
+        if (act !== null) sayMath(run, act, true);
       } else if (name === 'hint') {
         const made = cells.hint(run);
         mathChanged();
@@ -2146,7 +2147,7 @@ export function createPainter(options: PainterOptions): Painter {
       } else {
         const act = cells.show(run);
         mathChanged();
-        if (act !== null) sayMath(run, act);
+        if (act !== null) sayMath(run, act, true);
       }
     },
     mathInk(key, part, on) {

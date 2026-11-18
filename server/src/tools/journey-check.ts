@@ -6,6 +6,10 @@
 //              before restSettled, the page's own judgement), the drag as long as asked and the
 //              slider where it was sent, the undo's own turn; the language pane is open and cannot be closed; no label (the replay brain reports no model)
 //   missing    a tap target that never appears stops the journey with a message on `window.__journey`, not an alert
+//   mover      a stage with something that goes round for ever (3b of PLAN-romer): `rest` comes and its last visible change is the turn's own, well before the page judged the stage settled
+//              (not the mover's, which never stops); a label that goes round, the text layer made again at each frame as a clock that moves words will, is tapped where it is: one act
+//              that names it
+//   words      a tap asks for whole words: "Io" is not found in "motion" or in "position", and the choice or the label that only has the letters is not tapped for it
 //
 // Run by `pnpm check` and standalone: `tsx journey-check.ts --url <server>`.
 
@@ -14,9 +18,11 @@ import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { sleep } from './explore-browser';
 import { Tab } from './smoke';
-import type { CheckResult } from './smoke';
+import type { CheckResult, Posted } from './smoke';
 import type { LensScene } from './lens-check';
 import { modelLabel, modelName, parseJourney } from '../../../web/src/app/journey-script';
+import { rank } from '../../../web/src/app/journey-words';
+import { acts, partOf } from './label-check';
 import { chooseView } from './record-view';
 import { bindMovesShape } from '../../../web/src/app/journey-words';
 import type { JourneyState } from '../../../web/src/app/journey-script';
@@ -24,6 +30,43 @@ import type { JourneyState } from '../../../web/src/app/journey-script';
 const read = (name: string): string => readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/journeys/${name}.journey`)), 'utf8');
 
 const SCREEN = { width: 1280, height: 800 };
+
+/** the stage of `mover.journey`: Jupiter with a moon that turns round it for ever (a loop) and a label on Jupiter, "Io", which the check sets going once the stage has rested */
+const MOVER = [
+  'scene layout=caption canvas=wide lines=2',
+  'circle jup 80,45 12 fill=accent',
+  'group arm at=80,45 loop=spin',
+  'circle io in=arm 36,0 3 fill=ink',
+  'say x1 callout near=jup | Io',
+  'say x2 | A moon that never stops.',
+].join('\n');
+
+/** the stage of `words.journey`: a label and a choice that each hold the letters "io" in a longer word, and nothing called "Io" */
+const WORDS = ['scene layout=caption canvas=wide lines=3', 'circle jup 80,45 12 fill=accent', 'say x1 callout near=jup | position', 'say x2 choice | Show me the motion'].join('\n');
+
+/**
+ * What a clock that moves words will do to the text layer (PLAN-motion step 4, not built yet): the label "Io" goes round in a circle of 60 px, a lap in 6 s, and the layer's
+ * block for it is made again at every frame (a copy put in the old one's place), so a node a press found is gone by the time it is let go.
+ */
+const GO_ROUND = `(() => {
+  const find = () => [...document.querySelectorAll('.stage__text-block--ask')].find((holder) => holder.dataset.ask === 'Io');
+  if (!find()) return false;
+  const began = performance.now();
+  window.__mover = { rebuilt: 0 };
+  const frame = () => {
+    const holder = find();
+    if (holder) {
+      const at = ((performance.now() - began) / 6000) * Math.PI * 2;
+      const fresh = holder.cloneNode(true);
+      fresh.querySelector('.stage__text-line').style.transform = 'translate(' + Math.round(Math.cos(at) * 600) / 10 + 'px, ' + Math.round(Math.sin(at) * 600) / 10 + 'px)';
+      holder.replaceWith(fresh);
+      window.__mover.rebuilt += 1;
+    }
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+  return true;
+})()`;
 
 /** the script's own reading: pure, no browser */
 export function scriptResults(): CheckResult[] {
@@ -87,6 +130,24 @@ export function scriptResults(): CheckResult[] {
   const moves = ['line rod 50,39 50,78 stroke=ink thick=2', 'move sun along=sky', 'set rod rot=45', 'rect post 30,48 3x30 fill=ink', 'set arm at=40,50'];
   const words = ['correct st | 2. Compression: it rises', 'say x1 | At {rpm}', 'set sun fill=#ff8a4c', 'set shade opacity=0', 'set engine fill=accent'];
   add('journey-bind-moves', [...moves.filter((body) => !bindMovesShape(body)).map((body) => `"${body}" should move a shape`), ...words.filter((body) => bindMovesShape(body)).map((body) => `"${body}" should not`)], 'a bound move, turn or redrawn shape moves a shape; a bound sentence or colour does not');
+
+  // a tap's words are found as whole words (3b of PLAN-romer): "Io" is not in "motion" or "position"; the same words, or the words a label begins with, or has inside it, are
+  const ranks: [string, string, number][] = [
+    ['Show me the motion', 'Io', -1],
+    ['position', 'Io', -1],
+    ['Options', 'Io', -1],
+    ['Io', 'Io', 0],
+    ['Io / Jupiter', 'Io', 1],
+    ['Why is it longer at dusk?', 'Why is it longer', 1],
+    ['Why is it longer at dusk?', 'why is it long', -1],
+    ['Show the Io orbit', 'Io', 2],
+    ['Dusk', 'dusk', 0],
+    ['Brakes', 'brake', 0],
+    ['the brake disc', 'Brakes', 2],
+    ['', 'Io', -1],
+    ['Io', '', -1],
+  ];
+  add('journey-whole-words', ranks.filter(([label, wanted, want]) => rank(label, wanted) !== want).map(([label, wanted, want]) => `"${wanted}" in "${label}" ranks ${rank(label, wanted)}, not ${want}`), 'a tap\'s words are found as whole words ("Io" is not in "motion" or "position", "brake" is "brakes"), the same words first, the ones a label begins with next');
 
   // pnpm record's page: a 1920x1080 film is laid out in 1280x720 at 1.5 (every word 1.5 times as big), the old way is behind --legacy, and a bad flag is said
   const view = (flags: Parameters<typeof chooseView>[0]): string => {
@@ -268,7 +329,111 @@ export async function journeyGroup(base: string, dir: string, timeoutMs: number,
     }
     push('journey-follow-long', began, out);
   };
-  await Promise.all([missing(), long()]);
+  const mover = async (): Promise<void> => {
+    const began = Date.now();
+    note('journey: a mover on stage');
+    const out: CheckResult[] = [];
+    const add = (check: string, problems: readonly string[], saw: string): void => void out.push({ turn: 0, check, verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? saw : problems.join('; ') });
+    try {
+      const tab = await Tab.open(SCREEN.width, SCREEN.height);
+      try {
+        // a journey that cannot find its label gives up after 14 s, not the minute it would wait for a person's own
+        await tab.send('Page.navigate', { url: `${base}/?journey=mover&journeywait=14` });
+        const status = async (): Promise<string | null> => tab.eval<string | null>('window.__journey ? window.__journey.status : null').catch(() => null);
+        for (let waited = 0; waited < 30_000 && (await status()) !== 'running'; waited += 250) await sleep(250);
+        const problems: string[] = [];
+        const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(MOVER)})).then(() => null, (e) => String(e && e.message || e))`);
+        if (played !== null) problems.push(`the script would not play: ${played}`);
+        // once the first rest is over, the label is set going: it goes round Jupiter, the layer's line made again at each frame, as it will be when the stage's clock moves words
+        let going = false;
+        for (let waited = 0; waited < 60_000 && !going; waited += 100) {
+          const done = await tab.eval<string | null>('window.__journey && window.__journey.steps[1] ? window.__journey.steps[1].status : null').catch(() => null);
+          if (done === 'done' || done === 'stopped') {
+            going = (await tab.eval<boolean>(GO_ROUND)) === true;
+            break;
+          }
+          await sleep(100);
+        }
+        if (!going) problems.push('the label "Io" was not on stage to set going when the first rest was over');
+        let journey: JourneyState | null = null;
+        for (let waited = 0; waited < Math.max(timeoutMs, 90_000); waited += 250) {
+          await sleep(250);
+          const now = await status();
+          if (now === 'done' || now === 'stopped') break;
+        }
+        journey = await tab.eval<JourneyState | null>('JSON.parse(JSON.stringify(window.__journey || null))');
+        const rebuilt = await tab.eval<number>('window.__mover ? window.__mover.rebuilt : 0').catch(() => 0);
+        const [first, , tapped] = journey?.steps.filter((step) => step.op === 'rest' || step.op === 'tap') ?? [];
+        const tap = journey?.steps.find((step) => step.op === 'tap');
+        if (journey === null || first === undefined || tap === undefined) problems.push('the journey has no rest and tap');
+        else {
+          if (journey.status !== 'done') problems.push(`the journey ended ${journey.status}: ${journey.message ?? 'no message'}`);
+          // the mover moves for ever, so the last thing anyone could see change must not be it: the turn's last change stands well before the page judged the stage settled (which
+          // waits a moment of stillness after it)
+          if (first.rest === null || first.restSettled === null) problems.push('the first rest has no rest and restSettled');
+          else if (first.restSettled.perf - first.rest.perf < 600) problems.push(`the last visible change was ${Math.round(first.restSettled.perf - first.rest.perf)} ms before the stage was judged at rest: it follows the mover, not the turn (a stage that is still is judged after 900 ms)`);
+          if (tap.status !== 'done' || tap.tapAt === null) problems.push(`the tap on the label that goes round is ${tap.status}${tap.note === null ? '' : ` (${tap.note})`}`);
+          else {
+            if (!/^io$/i.test(tap.tapped ?? '')) problems.push(`the tap landed on "${tap.tapped ?? ''}", not on "Io"`);
+            if (tap.turn === null) problems.push('the tap opened no turn');
+          }
+          if (tapped === undefined) problems.push('the second rest is missing');
+        }
+        if (rebuilt < 50) problems.push(`the label went round for only ${rebuilt} frames`);
+        const sent = acts(tab, 0);
+        const part = sent.length === 1 ? partOf(sent[0] as Posted) : null;
+        if (part === null || part.label !== 'Io') problems.push(`the server was sent ${sent.length} acts naming ${part === null ? 'nothing' : `"${part.label}"`}, not one naming "Io"`);
+        const restNote = journey?.steps.find((step) => step.op === 'rest');
+        add('journey-mover', problems, `with something going round for ever, rest came ${restNote?.rest === null || restNote?.restSettled === null || restNote === undefined ? '?' : Math.round(restNote.restSettled.perf - restNote.rest.perf)} ms after the last change of the turn, and a label going round (made again ${rebuilt} times) was tapped: one act, naming "Io"`);
+      } finally {
+        await tab.close();
+      }
+    } catch (error) {
+      add('journey-mover', [error instanceof Error ? error.message : String(error)], '');
+    }
+    push('journey-mover', began, out);
+  };
+  const words = async (): Promise<void> => {
+    const began = Date.now();
+    note('journey: whole words');
+    const out: CheckResult[] = [];
+    try {
+      const tab = await Tab.open(SCREEN.width, SCREEN.height);
+      try {
+        await tab.send('Page.navigate', { url: `${base}/?journey=words&journeywait=14` });
+        for (let waited = 0; waited < 30_000 && (await tab.eval<string | null>('window.__journey ? window.__journey.status : null').catch(() => null)) !== 'running'; waited += 250) await sleep(250);
+        const problems: string[] = [];
+        const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(WORDS)})).then(() => null, (e) => String(e && e.message || e))`);
+        if (played !== null) problems.push(`the script would not play: ${played}`);
+        let journey: JourneyState | null = null;
+        for (let waited = 0; waited < Math.max(timeoutMs, 90_000); waited += 250) {
+          await sleep(250);
+          const now = await tab.eval<string | null>('window.__journey ? window.__journey.status : null').catch(() => null);
+          if (now === 'done' || now === 'stopped') break;
+        }
+        journey = await tab.eval<JourneyState | null>('JSON.parse(JSON.stringify(window.__journey || null))');
+        const [refused, taken] = journey?.steps.filter((step) => step.op === 'tap') ?? [];
+        if (journey === null || refused === undefined || taken === undefined) problems.push('the journey has no taps');
+        else {
+          if (journey.status !== 'done') problems.push(`the journey ended ${journey.status}: ${journey.message ?? 'no message'}`);
+          if (refused.status !== 'skipped' || refused.tapAt !== null) problems.push(`a tap for "Io" was ${refused.status} and touched "${refused.tapped ?? 'nothing'}": the letters are in "motion" and in "position", and a word is not found in another`);
+          if (!/^position$/i.test(taken.tapped ?? '') || taken.used !== 'position') problems.push(`"Io / position" tapped ${taken.tapped === null ? 'nothing' : `"${taken.tapped}"`} (by "${taken.used ?? ''}"), not the label "position"`);
+        }
+        const sent = acts(tab, 0);
+        const part = sent.length === 1 ? partOf(sent[0] as Posted) : null;
+        const choices = tab.posted.filter((turn) => turn.kind === 'tap');
+        if (choices.length > 0) problems.push(`${choices.length} choice${choices.length === 1 ? ' was' : 's were'} tapped`);
+        if (part === null || part.label !== 'position') problems.push(`the server was sent ${sent.length} acts naming ${part === null ? 'nothing' : `"${part.label}"`}, not one naming "position"`);
+        out.push({ turn: 0, check: 'journey-words', verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? '"Io" tapped nothing (it is in "motion" and "position" only as letters), and the label "position" was tapped by its own word: one act' : problems.join('; ') });
+      } finally {
+        await tab.close();
+      }
+    } catch (error) {
+      out.push({ turn: 0, check: 'journey-words', verdict: 'FAIL', detail: error instanceof Error ? error.message : String(error) });
+    }
+    push('journey-words', began, out);
+  };
+  await Promise.all([missing(), long(), mover(), words()]);
   return scenes;
 }
 

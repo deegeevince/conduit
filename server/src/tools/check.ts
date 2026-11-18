@@ -18,6 +18,12 @@
 //   ask                (tablet 1180x820 at two pixels, touch, the lens off and on) a finger tap on an ask's blank focuses its input, also under the Draw layer after a pen stroke;
 //                      a short pen tap too, a pen drag writes; `fill` puts a wrong or right answer in the blank and opens the next stage; Send drawing names the ask (ask-check.ts)
 //   tour               (`/demo`; 1280x800, 820x971, 390x844) the tour opens on the stage, a chapter lists its cards, a card plays its demo with no model call, "Back to the tour" returns, `/demo <name>` jumps to one (tour-check.ts)
+//   fb-021             the owner's phone showed the stage black (Android 10, Chrome 157, 718x626 at three pixels): the first minute at that size (first load, Stop, Draw, a stroke) is played in
+//                      Chrome with an Android user agent and in WebKit (the `webkit` group's fb021 scene, iPhone sizes), as the device does and with a low-latency canvas painted black and every GL
+//                      read zero: the stage's corners and centre stay lit, no ink layer is on screen before Draw, its canvases are transparent, the picture sent is lit, and the first-load welcome's
+//                      turn is never asked of the server (black-check.ts)
+//   webkit             Playwright's WebKit at an iPhone in landscape, an iPhone upright and an iPad (welcome, scripts, Draw, fb-021, ask: webkit-check.ts); not part of a run unless asked
+//                      for (`--webkit`, or `--only webkit`), and skipped with a message when that browser is not installed
 //   fb-055             a label the brain drew (`say callout near=x`, a figure part's `label=`) is tapped to ask about what it names: one act that names the part, none for a drag, a click on
 //                      the drawn part or on plain words; with a mouse and a finger; the journey's `tap | Brakes` finds "brake disc" (label-check.ts)
 //   fb-064             the Undo chip puts the answer before back whole: the car's labels (and a click on one asks about it), its words and its choice, and nothing of the answer it
@@ -67,6 +73,7 @@ import { showcaseReelGroup } from './showcase-reel';
 import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
 import { ASK_SCREEN, askGroup } from './ask-check';
+import { BLACK_SCREEN, blackGroup } from './black-check';
 import { DRAW_SCREEN, drawGroup } from './draw-check';
 import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
@@ -75,7 +82,7 @@ import { labelGroup } from './label-check';
 import { inplaceGroup } from './inplace-check';
 import { undoGroup } from './undo-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
-import { checkAxisTags, checkDeclared, checkLabels, checkNoEarlierChip, checkTourBar, scriptGroup } from './demo-check';
+import { chartBars, checkAxisTags, checkDeclared, checkLabels, checkNoEarlierChip, checkTourBar, scriptGroup } from './demo-check';
 import type { LabelWant } from './demo-check';
 import { fb062Group, loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
@@ -324,9 +331,6 @@ interface ScreenRun {
   readonly aborted: string | null;
 }
 
-/** the first-load demo's snapshot upload, addressed to its local turn id */
-const KNOWN_FAILURE = /\/turns\/local-first-load\/snapshot answered 404/;
-
 const ANY: Step = { n: 1, say: null, name: 'check', expects: 'any' };
 
 interface Stage {
@@ -455,11 +459,11 @@ class Screen {
     }
     this.feet = options.footprints === true ? await footprintJudge(tab, add, { scale: tab.dpr, spots }) : new Map();
     const drained = tab.drain();
-    // KNOWN: the page uploads the stage's snapshot for the first-load demo under its local turn id, which the server does not know (404). Harmless, and said in the detail.
-    const known = drained.failedRequests.filter((entry) => KNOWN_FAILURE.test(entry.text));
-    const logged = { consoleErrors: drained.consoleErrors.filter((entry) => !(known.length > 0 && /404/.test(entry.text) && /Failed to load resource/.test(entry.text))), failedRequests: drained.failedRequests.filter((entry) => !KNOWN_FAILURE.test(entry.text)) };
+    // (fb-021: the page used to upload the stage's snapshot for the first-load welcome under its local turn id, which the server does not know, and was let off for the 404. It no
+    // longer sends one, so a failed request is a failed request.)
+    const logged = drained;
     talk.add(results, 'no-console-errors', logged.consoleErrors.length === 0 ? 'PASS' : 'FAIL', logged.consoleErrors.length === 0 ? 'nothing logged as an error' : `${logged.consoleErrors.length}: ${[...new Set(logged.consoleErrors.map((entry) => entry.text))].slice(0, 3).join(' | ')}`);
-    talk.add(results, 'no-failed-requests', logged.failedRequests.length === 0 ? 'PASS' : 'FAIL', logged.failedRequests.length === 0 ? `every request answered${known.length > 0 ? ' (the first-load snapshot upload answered 404: known, ignored)' : ''}` : `${logged.failedRequests.length}: ${[...new Set(logged.failedRequests.map((entry) => entry.text))].slice(0, 3).join(' | ')}`);
+    talk.add(results, 'no-failed-requests', logged.failedRequests.length === 0 ? 'PASS' : 'FAIL', logged.failedRequests.length === 0 ? 'every request answered' : `${logged.failedRequests.length}: ${[...new Set(logged.failedRequests.map((entry) => entry.text))].slice(0, 3).join(' | ')}`);
     const scene: Scene = { name, seconds: (Date.now() - began) / 1000, picture: file, results };
     this.scenes.push(scene);
     for (const result of results) if (result.verdict === 'FAIL') this.note(`  FAIL ${name} ${result.check}: ${result.detail.slice(0, 200)}`);
@@ -813,6 +817,101 @@ class Screen {
         if (!dead.includes('fbmark')) problems.push(`no dead-bind warning for the toggle fbmark, whose only bind sets what is already set (${dead.length === 0 ? 'no dead-bind at all' : `told of ${dead.join(', ')}`})`);
         if (dead.includes('fbspin')) problems.push('the slider fbspin, whose binds all move something, was called dead');
         good = `a real drag moved ${ids.length} bound things (${ids.join(', ')}) to their targets, each half way at half way and back at the start; the control whose only bind does nothing was told`;
+        break;
+      }
+      case 'fb-071': {
+        // fb-071: a chart whose cells follow a slider rescaled its axis as the slider moved, so a bar barely seemed to grow as the value rose (the thinking distance, 3 m to 30 m, even
+        // shrank). A real drag along the track from one end to the other, the bars measured in pixels in a picture of the page at five places: the axis labels do not change, and every
+        // bar rises, never shrinks, and by enough to see; the bars share one scale (the total is the thinking and the braking together).
+        interface Held { readonly id: string; readonly min: number; readonly max: number; readonly value: number; readonly parts: readonly { part: string; box: { x: number; y: number; width: number; height: number } }[]; readonly box: { x: number; y: number; width: number; height: number } }
+        const held = async (): Promise<Held | undefined> => (await tab.eval<Held[]>('window.__stage.controls().map((c) => ({ id: c.id, min: c.min, max: c.max, value: c.value, parts: c.parts, box: c.box }))')).find((c) => c.id === 'fbspeed');
+        const slider = await held();
+        if (slider === undefined) {
+          problems.push('the slider fbspeed is not on stage');
+          break;
+        }
+        const track = slider.parts.find((p) => p.part === 'track')?.box ?? slider.box;
+        const y = track.y + track.height / 2;
+        const at = (share: number): { x: number; y: number } => ({ x: track.x + 2 + (track.width - 4) * share, y });
+        // the bars' colour is learnt with the speed at the top (a bar is then most of the chart), and the slider put back
+        await tab.eval(`window.__stage.control('fbspeed', ${slider.max})`);
+        await sleep(900);
+        const learnt = await chartBars(tab, 'fbstop', null);
+        if (typeof learnt === 'string') {
+          problems.push(learnt);
+          break;
+        }
+        await tab.eval(`window.__stage.control('fbspeed', ${slider.min})`);
+        await sleep(900);
+        const shares = [0, 0.25, 0.5, 0.75, 1];
+        const seen: { value: number | undefined; bars: Awaited<ReturnType<typeof chartBars>>; ticks: string }[] = [];
+        for (const [index, share] of shares.entries()) {
+          if (index > 0) {
+            await tab.drag(at(shares[index - 1] as number), at(share));
+            await sleep(500);
+          }
+          const ticks = (await tab.eval<{ ticks: { y: string[] } }>(`window.__stage.chart('fbstop', { reset: true })`)).ticks.y.join(' ');
+          seen.push({ value: (await held())?.value, bars: await chartBars(tab, 'fbstop', learnt.colour), ticks });
+        }
+        const words = seen.map((one) => `${String(one.value)}: ${typeof one.bars === 'string' ? one.bars : one.bars.heights.map((h) => `${h}`).join('/')} px`).join(', ');
+        if (seen[0]?.value !== slider.min || (seen[seen.length - 1]?.value ?? 0) < slider.max - 1) problems.push(`the drag went from ${String(seen[0]?.value)} to ${String(seen[seen.length - 1]?.value)}, not from ${slider.min} to ${slider.max}`);
+        if (new Set(seen.map((one) => one.ticks)).size > 1) problems.push(`the axis changed as the speed did: ${seen.map((one) => `${String(one.value)}: ${one.ticks}`).join(' | ')}`);
+        const readings = seen.flatMap((one) => (typeof one.bars === 'string' ? [] : [one.bars]));
+        if (readings.length !== seen.length || readings.some((one) => one.heights.length !== 3)) problems.push(`three bars were not read at each place: ${words}`);
+        else {
+          const height = (readings[0] as { box: { height: number } }).box.height;
+          const least = Math.max(4, 0.015 * height);
+          for (const [bar, name] of ['Thinking', 'Braking', 'Total'].entries()) {
+            const run = readings.map((one) => one.heights[bar] as number);
+            const shrank = run.findIndex((value, index) => index > 0 && value < (run[index - 1] as number) - 1);
+            if (shrank > 0) problems.push(`the ${name} bar shrank as the speed rose: ${run.join(' > ')} px`);
+            else if ((run[run.length - 1] as number) - (run[0] as number) < least) problems.push(`the ${name} bar grew from ${run[0]} to ${run[run.length - 1]} px, less than the ${least.toFixed(0)} px a person sees`);
+          }
+          const last = (readings[readings.length - 1] as { heights: readonly number[] }).heights;
+          const share = (last[2] as number) / Math.max(1, last[1] as number);
+          // 530 m total against 500 m braking at 100 km/h
+          if (share < 0.95 || share > 1.17) problems.push(`the bars do not stand on one scale: the Total is ${share.toFixed(2)} of the Braking at the top, 1.06 by the sentence's numbers`);
+        }
+        good = `dragging the slider from ${slider.min} to ${slider.max}, the axis (${seen[0]?.ticks.split(' ').join(', ') ?? ''}) did not change and every bar rose (${words})`;
+        break;
+      }
+      case 'orbit-lap': {
+        // a bound ride along a closed outline: one whole range is one lap from where the Earth was drawn (3 o'clock), clockwise: 6 at a quarter, 9 at half, 12 at three quarters, 3 again at the end
+        const centreOf = async (id: string): Promise<{ x: number; y: number } | null> =>
+          tab.eval<{ x: number; y: number } | null>(`(() => { const e = window.__stage.elements().find((c) => c.id === ${JSON.stringify(id)}); return e ? { x: e.box.x + e.box.width / 2, y: e.box.y + e.box.height / 2 } : null; })()`);
+        const controls = await tab.eval<{ id: string; min: number; max: number }[]>('window.__stage.controls().map((c) => ({ id: c.id, min: c.min, max: c.max }))');
+        const slider = controls.find((c) => c.id === 'olmonth');
+        if (slider === undefined) {
+          problems.push('the slider olmonth is not on stage');
+          break;
+        }
+        await tab.eval(`window.__stage.control('olmonth', ${slider.min})`);
+        await sleep(600);
+        const sun = await centreOf('olring');
+        const home = await centreOf('olearth');
+        if (sun === null || home === null) {
+          problems.push('the ring or the Earth is not on stage');
+          break;
+        }
+        const radius = Math.hypot(home.x - sun.x, home.y - sun.y);
+        if (!(home.x > sun.x + radius * 0.9 && Math.abs(home.y - sun.y) < radius * 0.1)) problems.push(`the Earth is not drawn at 3 o'clock: it stands ${Math.round(home.x - sun.x)} right and ${Math.round(home.y - sun.y)} down of the ring's middle`);
+        const names = ['3', '6', '9', '12', '3'];
+        const where: string[] = [];
+        for (const [index, share] of [0, 0.25, 0.5, 0.75, 1].entries()) {
+          await tab.eval(`window.__stage.control('olmonth', ${slider.min + share * (slider.max - slider.min)})`);
+          await sleep(600);
+          const earth = await centreOf('olearth');
+          if (earth === null) {
+            problems.push('the Earth left the stage');
+            break;
+          }
+          // on screen, y runs down, so a turn clockwise from 3 o'clock goes down first
+          const want = { x: sun.x + radius * Math.cos(share * 2 * Math.PI), y: sun.y + radius * Math.sin(share * 2 * Math.PI) };
+          const off = Math.hypot(earth.x - want.x, earth.y - want.y);
+          where.push(`${names[index]} o'clock`);
+          if (off > Math.max(4, radius * 0.08)) problems.push(`at ${Math.round(share * 100)}% of the range the Earth should be at ${names[index]} o'clock (${Math.round(want.x)},${Math.round(want.y)}); it is at ${Math.round(earth.x)},${Math.round(earth.y)}, ${Math.round(off)} px off`);
+        }
+        good = `the Earth drawn at 3 o'clock went round clockwise as the slider went from ${slider.min} to ${slider.max}: ${where.join(', ')}`;
         break;
       }
       case 'fb-054': {
@@ -1660,22 +1759,6 @@ function table(run: ScreenRun): string {
   return lines.join('\n');
 }
 
-async function webkitHook(base: string, out: string, timeoutMs: number, quiet: boolean): Promise<number> {
-  const missing = webkitMissing();
-  if (missing !== null) {
-    process.stdout.write(`\nwebkit: SKIPPED, ${missing}\n`);
-    return 0;
-  }
-  try {
-    const scenes = await webkitGroup(base, join(out, 'webkit'), timeoutMs, (text) => (quiet ? undefined : process.stdout.write(`[${text}]\n`)));
-    process.stdout.write('\nwebkit (iPhone landscape, iPhone, iPad)\n');
-    return printWebkit(scenes, (text) => process.stdout.write(text));
-  } catch (error) {
-    process.stdout.write(`  FAIL webkit stopped: ${error instanceof Error ? error.message : String(error)}\n`);
-    return 1;
-  }
-}
-
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The groups, and how they are run
 
@@ -1756,7 +1839,7 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     // fb-001 (docs/feedback.md): code blocks that did not render in the tour's code chapter. `--only fb-001` is the code demo's judging.
     demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, name === 'code' ? ['fb-001'] : [], (run) => run.demoScenes([name], index === 0))));
     // fb-058 to fb-061 (docs/feedback.md): the big-numbers maths turn. `--only fb-059` is the hard group's judging of its own scene (fb-060, fb-061 and fb-058 likewise; the ask and maths groups too)
-    units.push(screenUnit('demo-hard', 60, ['fb-058', 'fb-059', 'fb-060', 'fb-061'], (run) => run.hardScenes()));
+    units.push(screenUnit('demo-hard', 60, ['fb-058', 'fb-059', 'fb-060', 'fb-061', 'fb-071', 'orbit-lap'], (run) => run.hardScenes()));
   }
   for (const screen of LENS_SCREENS) {
     units.push({
@@ -1782,6 +1865,32 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       out.json = { key: 'asks', value: { screen: ASK_SCREEN.name, scenes } };
     },
   });
+  units.push({
+    name: 'fb-021',
+    needs: 'main',
+    weight: 70,
+    run: async (servers, out) => {
+      out.lines.push(`\nfb-021 ${BLACK_SCREEN.name} (dpr ${BLACK_SCREEN.dpr}, touch, an Android user agent): first load, Stop, Draw, a stroke; as the device does and with a low-latency canvas painted black and every GL read zero`);
+      sceneLines(out, await blackGroup(servers.main as string, BLACK_SCREEN, join(args.out, 'fb-021'), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[fb-021] ${text}\n`))));
+    },
+  });
+  // WebKit (Playwright): `--only webkit` runs all of its scenes, `--only fb-021` the one for this row, and `--webkit` adds it to a run. It skips with a message when the browser is not installed.
+  const webkitScenes = (picked: readonly ('welcome' | 'scripts' | 'draw' | 'fb021' | 'ask')[]) => async (servers: Readonly<Record<Needs, string | null>>, out: Output): Promise<void> => {
+    const missing = webkitMissing();
+    if (missing !== null) return void out.lines.push(`\nwebkit: SKIPPED, ${missing}`);
+    try {
+      const scenes = await webkitGroup(servers.main as string, join(args.out, 'webkit'), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[${text}]\n`)), undefined, picked);
+      out.lines.push(`\nwebkit ${picked.join(', ')} (iPhone landscape, iPhone, iPad)`);
+      out.failures += printWebkit(scenes, (text) => out.lines.push(text.replace(/\n$/, '')));
+    } catch (error) {
+      out.failures += 1;
+      out.lines.push(`  FAIL webkit stopped: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  units.push({ name: 'fb-021', needs: 'main', weight: 40, run: webkitScenes(['fb021']) });
+  // the whole of it unless `--only` is naming fb-021's row too (that one runs the same scene on its own)
+  const rowWanted = args.only !== null && args.only.some((wanted) => 'fb-021'.startsWith(wanted));
+  units.push({ name: 'webkit', needs: 'main', weight: 100, run: webkitScenes(rowWanted ? ['welcome', 'scripts', 'draw', 'ask'] : ['welcome', 'scripts', 'draw', 'fb021', 'ask']) });
   ['', 'lens=1'].forEach((page, index) =>
     units.push({
       name: 'draw',
@@ -2103,7 +2212,9 @@ async function main(): Promise<void> {
     process.stdout.write('\n--only takes these, comma-separated, or the start of a name (demo = every demo, welcome = both welcomes, choice = the welcome); try: pnpm check --only art-maker,memory\n');
     process.exit(0);
   }
-  const chosen = args.only === null ? units : units.filter((unit) => args.only?.some((wanted) => picks(unit, wanted)));
+  // the WebKit unit is part of a run only when asked for (`--webkit`, or `--only webkit`): it needs a browser that is not installed everywhere
+  const chosen = (args.only === null ? units : units.filter((unit) => args.only?.some((wanted) => picks(unit, wanted)))).filter((unit) => !(unit.name === 'webkit' && args.only === null && !args.webkit));
+  if (args.only !== null && args.webkit && !chosen.some((unit) => unit.name === 'webkit')) chosen.push(units.find((unit) => unit.name === 'webkit') as Unit);
   for (const wanted of args.only ?? []) if (!units.some((unit) => picks(unit, wanted))) usage(`no group called "${wanted}"; the groups are ${names.join(', ')}`);
   if (chosen.some((unit) => unit.needs !== 'none') && !CHROME_CANDIDATES.some((path) => existsSync(path))) usage('no Chrome found: set CHROME_BIN to a Chrome or Chromium executable');
   await mkdir(args.out, { recursive: true });
@@ -2246,8 +2357,6 @@ async function main(): Promise<void> {
       failures += out.failures;
       if (out.json !== undefined) json[out.json.key].push(out.json.value);
     }
-    // the WebKit group (--webkit): the bugs only Safari had, in Playwright's WebKit (webkit-check.ts); skipped with a message when that browser is not installed
-    if (args.webkit) failures += await webkitHook(base, args.out, args.timeoutMs, args.quiet);
     await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, ...json }, null, 2));
   } catch (error) {
     failures += 1;

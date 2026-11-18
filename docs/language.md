@@ -245,7 +245,7 @@ hit  <id> [gesture] [@time]
 ```
 
 - `set` changes live elements of any kind: named styles and properties are applied on top of what they have, and the painter moves smoothly from old to new (colour, size, place, turn, scale, opacity, layer). It takes the short set length unless a speed word or `over=` says otherwise. `stay=pin` pins; `stay=beat` or `stay=Ns` schedules a departure.
-- `move` sends an element's centre to a place. With `along=` it travels along a drawn shape's outline, by length, and stops where the outline ends unless a destination is given.
+- `move` sends an element's centre to a place. With `along=` it travels along a drawn shape's outline, by length, from the place it was drawn at (the nearest point of the outline), and stops where the outline ends unless a destination is given. On a closed outline (a circle, an ellipse) one whole move, or one whole range of a bound control, is one lap, clockwise, from where it was drawn back to it: a thing drawn at 3 o'clock is at 9 o'clock half way, the way a ride with `period=` goes round from its drawing.
 - `drop` makes elements leave now, with `exit=` or their own exit. It takes several ids (`drop a1 a2 a3`); `set` moves an element and refuses to resize it.
 - `hit` performs one gesture on one element and then is over.
 - The target `scene` means every live element of the open scene; `all` means every live element.
@@ -505,6 +505,8 @@ math m3 times | 47 × 6
 - **Parts** are written `<id>.<part>` (an id cannot hold a dot, so it is unambiguous): `m1.r3` (a row), `m1.r3-tens` (one digit of it), `m1.tens` (a place), `m1.carry-tens` (the carry above a place), `m1.ans-ones` (an answer cell), `m1.ans` (the whole answer row), `m1.ex-tens` (the exchanged digits of a subtraction), `m1.top-tens`, `m1.rule`, `m1.sign`, `m1.s2` (what step 2 adds). Places are `ones tens hundreds thousands tenthousands tenths hundredths thousandths`. A part works in `near=` (`say near=m1.r3:below | …`), `hit` (`hit m1.tens`), `set` (`set m1.carry-tens mark=box`, as `set t1.row2 mark=box` marks a table's row) and `fill`. Whether the block has that part is for the painter to say.
 - **`fill m1 | 72`** spreads a given answer across the answer cells, right to left, one digit to each; `fill m1.ans-ones | 2` writes one.
 - **Composition.** A block in the flow like a table, or in a room on a free scene.
+- **A finished sum is told to the brain, and answered.** The Check that finds every box right (or the Show me that fills the last box) is the act that finishes the block: it goes up as a control event and is also the next turn's input, as an ask's last answer is (`send=last`), worded with how she got there: `m1: all right, after 1 wrong check (tens 7) and 1 hint`. Every other act (a wrong Check, a hint, a box ringed) is only heard with the next turn. A finger or a Pencil on a box or a button works the block and is not also a tap on it. The maths chapter teaches the brain to answer a finished block with one line of what she did well and ONE next small question (fb-091).
+- **A photographed question** is shown first (`scene layout=figure canvas=wide`, `pic p1 from=u1`), a `callout at=x,y in=p1` on each number it gives, in the question's own words, then the working in its own `scene stack` (fb-090).
 
 ## 5. Time
 

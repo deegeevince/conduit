@@ -202,14 +202,13 @@ function show(series: ChartSeries, indexed: boolean): (number | null)[] {
   return first === undefined ? [...series.values] : series.values.map((v) => (v === null ? null : (v / first) * 100));
 }
 
-export function plotOf(state: ChartState): Plot {
-  const { model, words } = state;
+/** What is drawn of a model: which way (candles asked for of rows that are not prices are drawn as a line), and the series, the volume last. */
+function seriesOf(model: ChartModel, words: ChartState['words']): { readonly drawKind: DrawKind; readonly series: PlotSeries[] } {
   const kind = model.draw;
   const indexed = words.includes('indexed');
   const pricey = kind === 'candles' || kind === 'ohlc';
   const price = pricey && model.candles;
   const drawKind: DrawKind = pricey ? (price ? kind : 'line') : kind;
-  const axis = axisOf(model, drawKind === 'line' || drawKind === 'area', drawKind === 'columns');
   const series: PlotSeries[] = [];
   const roleOf = (role: string): ChartSeries | undefined => model.series.find((s) => s.role === role);
   if (price) {
@@ -231,6 +230,11 @@ export function plotOf(state: ChartState): Plot {
     const volume = roleOf('volume');
     if (volume !== undefined && plain.length > 0) series.push({ key: 'volume', name: 'volume', draw: 'volume', colour: -1, format: volume.format, values: [...volume.values], ohlc: null, up: null });
   }
+  return { drawKind, series };
+}
+
+/** The lowest and highest value any series (but the volume) holds, as drawn; infinite and -infinite when it holds none. */
+function valuesRange(series: readonly PlotSeries[]): { lo: number; hi: number } {
   let lo = Infinity;
   let hi = -Infinity;
   for (const s of series) {
@@ -248,6 +252,20 @@ export function plotOf(state: ChartState): Plot {
         hi = Math.max(hi, v);
       }
     }
+  }
+  return { lo, hi };
+}
+
+export function plotOf(state: ChartState): Plot {
+  const { model, words } = state;
+  const { drawKind, series } = seriesOf(model, words);
+  const axis = axisOf(model, drawKind === 'line' || drawKind === 'area', drawKind === 'columns');
+  let { lo, hi } = valuesRange(series);
+  // a chart whose cells follow a control must not rescale as the control moves (fb-071): its scale takes in every value the control can make of it
+  for (const other of state.reach ?? []) {
+    const range = valuesRange(seriesOf(other, words).series);
+    lo = Math.min(lo, range.lo);
+    hi = Math.max(hi, range.hi);
   }
   if (!Number.isFinite(lo)) [lo, hi] = [0, 1];
   const log = words.includes('log') && lo > 0;
