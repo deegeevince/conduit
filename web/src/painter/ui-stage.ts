@@ -29,6 +29,7 @@ import { applyAction, hitAt, sliderAt, typeInto } from './blocks/ui/state';
 import { SWITCH } from './blocks/ui/kit';
 import { lengthOf, playerPosition } from './blocks/ui/rich';
 import { NO_STATE } from './blocks/ui/types';
+import { reviseFigure } from './figure-revise';
 import type { UiHit, UiPictureState, UiScreenLayout, UiState } from './blocks/ui/types';
 
 /** How long a part takes to come in once its row has landed. */
@@ -685,6 +686,8 @@ export interface DrawnCall {
   readonly q: number;
   readonly tq: number;
   readonly out: { readonly figures: FigureFrame[]; readonly elements: ElementFrame[] };
+  /** a figure that a turn changed (`structures.ts`): the seconds since the layout it is now in began; the change is then played from the layout before it, not eased to */
+  readonly revise?: { readonly since: number };
 }
 
 /**
@@ -709,6 +712,13 @@ export function drawUi(call: DrawnCall): { readonly drawn: boolean; readonly pha
       leave = 1 - Math.max(0, Math.min(1, (tq - exit.start) / Math.max(1e-6, exit.end - exit.start)));
       phase = 'leaving';
     }
+  }
+  // a figure that a turn changed: the parts that go, then the parts that come, then the routes and the labels, on the painter's clock
+  if (call.revise !== undefined && before !== null) {
+    const played = reviseFigure(before, drawn, call.revise.since, q);
+    for (const f of played.figures) out.figures.push(leave < 1 ? ({ ...f, opacity: f.opacity * leave } as FigureFrame) : f);
+    for (const e of played.elements) out.elements.push(leave < 1 ? { ...e, opacity: e.opacity * leave } : e);
+    return { drawn: played.figures.length + played.elements.length > 0, phase: phase === 'on' && !played.done ? 'entering' : phase };
   }
   const easing = before !== null && q < 1;
   const was = new Map<string, FigureFrame | ElementFrame>();

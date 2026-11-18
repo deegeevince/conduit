@@ -53,6 +53,12 @@ function describeMath(math: MathFigure): string {
   return `${head}${blanks.length === 0 ? '' : `: blank ${blanks.join(' ')}`}${rows.size === 0 ? '' : `; parts ${[...rows].join(' ')} rule`}${math.steps ? `; ${grid.steps} steps` : ''}${filled}`;
 }
 
+/** A figure carried on is whole: what the turn changed in it is not remembered (the next turn starts from what is there). */
+function omitHistory<T extends { readonly history?: unknown }>(figure: T): Omit<T, 'history'> {
+  const { history: _history, ...rest } = figure;
+  return rest;
+}
+
 /** How many of a figure's parts the brief names by id; the rest are counted. */
 const FIGURE_PARTS_LISTED = 30;
 
@@ -300,7 +306,7 @@ export function settle(schedule: Schedule, base: StageBase, at: number, controls
       whole?.kind === 'sprite'
         ? { kind: 'sprite', sprite: { ...whole.sprite, frames: whole.sprite.frames.map((rows) => rows.map((row) => ({ cells: row.cells, at: 0 }))) } }
         : whole?.kind === 'structure'
-          ? { ...whole, rows: whole.rows.map((row) => ({ cells: row.cells, at: 0 })) }
+          ? { ...omitHistory(whole), rows: whole.rows.map((row) => ({ cells: row.cells, at: 0 })) }
           : whole?.kind === 'control' && held !== null
             ? { ...whole, value: held }
             : whole;

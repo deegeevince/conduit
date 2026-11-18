@@ -8,9 +8,9 @@
 // rest of the timeline this is a pure function of (schedule, arrivals, time): the engine's answers are only remembered, in `LAYOUTS`.
 
 import { styleAt } from '@conduit/language';
-import type { ElementSpan, ElementStyle, Polyline, Range, Schedule, Scope, SightNote } from '@conduit/language';
+import type { ElementSpan, ElementStyle, FigureRevision, Polyline, Range, Schedule, Scope, SightNote, StructureRow } from '@conduit/language';
 import { EMPTY_STRUCTURE_LAYOUT } from '../contracts/blocks';
-import type { BlockLook, BlockPart, MeasuredText, StructureEngine, StructureLayout, TextMeasure, TextSpec } from '../contracts/blocks';
+import type { BlockLook, BlockPart, DrawnFrames, MeasuredText, StructureEngine, StructureLayout, TextMeasure, TextSpec } from '../contracts/blocks';
 import type { Colour, ElementFrame, RunFrame, ShapeFrame } from '../contracts/frame';
 import { IDENTITY } from '../contracts/frame';
 import type { LookSpec, MotionRecipe } from '../contracts/look';
@@ -24,6 +24,7 @@ import { paintColour } from './figures';
 import { setText } from './layout';
 import { cellOf } from './layout/metrics';
 import { own } from './own';
+import { sameFigure } from './figure-revise';
 import { registerLaidOut } from './registry';
 import { STRUCTURES_READY, layoutStructure } from './blocks';
 import { modelOf, playingParts, rollKey } from './blocks/tune';
@@ -257,15 +258,29 @@ export function setTextOnce(input: Parameters<typeof setText>[0]): ReturnType<ty
   return made;
 }
 
-function signature(structure: ElementSpan, members: readonly ElementSpan[], rows: number, scope: Scope): string {
+function signature(structure: ElementSpan, members: readonly ElementSpan[], rows: readonly StructureRow[], scope: Scope): string {
   const figure = structure.figure;
-  const head = figure?.kind === 'structure' ? [figure.structure, figure.grow, figure.bars, figure.route, JSON.stringify(figure.box), structure.text, JSON.stringify(figure.rows.slice(0, rows).map((row) => row.cells))] : [];
+  const head = figure?.kind === 'structure' ? [figure.structure, figure.grow, figure.bars, figure.route, JSON.stringify(figure.box), structure.text, JSON.stringify(rows.map((row) => row.cells))] : [];
   const parts = members.map((member) => {
     const f = member.figure;
     const detail = f?.kind === 'node' ? [f.shape, f.values.join(','), f.x, f.y] : f?.kind === 'link' ? [f.from, f.to, f.ends, f.dashed] : [];
     return [member.key, member.text, detail.join('/'), member.style.size, member.style.weight, member.style.face].join('~');
   });
   return JSON.stringify([structure.key, head, parts, JSON.stringify(scope)]);
+}
+
+/** A figure's rows as they stood before the changes made at `by` or later (the history is undone, last first): the figure as it was at that moment of the turn. */
+function rowsBefore(rows: readonly StructureRow[], history: readonly FigureRevision[], by: number): StructureRow[] {
+  const list = [...rows];
+  for (const change of [...history].reverse()) {
+    if (change.at < by) continue;
+    if (change.kind === 'add') list.splice(change.index, 1);
+    else if (change.kind === 'replace') {
+      const was = list[change.index];
+      if (was !== undefined) list[change.index] = { cells: change.was, at: was.at };
+    } else list.splice(Math.min(change.index, list.length), 0, { cells: change.cells, at: 0 });
+  }
+  return list;
 }
 
 // What the stage plan learns of a structure (does it fit its room, or is it cut or shrunk) is remembered between rebuilds as its layouts are: a timeline is
@@ -293,7 +308,7 @@ export function probeStructure(structure: ElementSpan, schedule: Schedule, args:
     args.engine !== undefined
       ? null
       : [
-          signature(structure, members, figure.rows.length, args.scope),
+          signature(structure, members, figure.rows, args.scope),
           JSON.stringify(figure.marks ?? []),
           JSON.stringify(figure.math ?? null),
           figure.structure === 'math' ? mathKey(structure.key) : '',
@@ -360,7 +375,10 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
     times.add(arrival(member.key));
     if (member.exit !== null) times.add(member.exit.start);
   }
-  figure.rows.forEach((_, index) => times.add(arrival(`${structure.key}#r${index}`)));
+  // (a figure that a turn changed is laid out at its changes, not as each row arrived: the rows are all there from the start of its history)
+  if ((figure.history?.length ?? 0) === 0) figure.rows.forEach((_, index) => times.add(arrival(`${structure.key}#r${index}`)));
+  // a figure that a turn changed: each change is a moment of its own, so that what it was before it is laid out too (and the change can be played from that)
+  for (const change of figure.history ?? []) times.add(change.at);
   times.add(arrival(structure.key));
   // a written method: each mark and each fill put on a part lands when its line was written
   if (figure.math != null) for (const change of [...figure.math.marks, ...figure.math.fills]) times.add(change.at);
@@ -383,8 +401,12 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
       if (arrival(member.key) >= next) return false;
       return member.exit === null || member.exit.start > start;
     });
+    // the rows this epoch shows: those that had landed by its end; a figure that a turn changed is shown as it was at that moment (what the turn did after it is taken back)
+    const edited = (figure.history?.length ?? 0) > 0;
     let rows = 0;
-    while (rows < figure.rows.length && arrival(`${structure.key}#r${rows}`) < next) rows += 1;
+    if (!edited) while (rows < figure.rows.length && arrival(`${structure.key}#r${rows}`) < next) rows += 1;
+    const shownRows: readonly StructureRow[] = edited ? rowsBefore(figure.rows, figure.history ?? [], next) : figure.rows.slice(0, rows);
+    if (edited) rows = shownRows.length;
     const fit = env.fitOf(structure, look, start);
     const origin = { x: fit.box.x / ps, y: fit.box.y / ps };
     const unit = fit.unit / ps;
@@ -409,9 +431,9 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
         : [];
     // a written method as it stands at the end of this cluster: the marks and fills that were written by then
     const math = figure.math == null ? figure.math : { ...figure.math, marks: figure.math.marks.filter((mark) => mark.at < next), fills: figure.math.fills.filter((fill) => fill.at < next) };
-    const key = [signature(structure, present, rows, env.scope), JSON.stringify(marks), JSON.stringify(math), figure.structure === 'math' ? `${mathKey(structure.key)}.${formulaRev()}` : '', look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key, structure.held) : '', env.viewport.dpr].join('|');
+    const key = [signature(structure, present, shownRows, env.scope), JSON.stringify(marks), JSON.stringify(math), figure.structure === 'math' ? `${mathKey(structure.key)}.${formulaRev()}` : '', look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key, structure.held) : '', env.viewport.dpr].join('|');
     const layout = remembered(key, () => {
-      const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows), marks, ...(math === undefined ? {} : { math }) } };
+      const shown: ElementSpan = { ...structure, figure: { ...figure, rows: shownRows, marks, ...(math === undefined ? {} : { math }) } };
       // v2.2: a mock-up is laid out and drawn by the interface kit, as finished frames
       if (figure.structure === 'screen' && env.engine === undefined) {
         try {
@@ -816,7 +838,13 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         const { epoch, previous, q } = placeOf(plan, owner, tq);
         // v2.2: a mock-up draws itself, a row at a time
         if (owner === structure && epoch.layout.drawn !== undefined) {
-          const drawn = drawUi({ structure, drawn: epoch.layout.drawn, before: previous?.layout.drawn ?? null, q, tq, out });
+          // a figure that a turn changed: played from the layout before the change that is still being played (an epoch that changed nothing, a room that moved, carries on the same change)
+          let from = plan.epochs.indexOf(epoch);
+          if (structure.figure?.kind === 'structure' && structure.figure.structure === 'figure' && (structure.figure.history?.length ?? 0) > 0) {
+            while (from > 0 && plan.epochs[from - 1]?.layout.drawn !== undefined && sameFigure(plan.epochs[from - 1]?.layout.drawn as DrawnFrames, plan.epochs[from]?.layout.drawn as DrawnFrames)) from -= 1;
+          } else from = 0;
+          const changedFrom = from > 0 ? plan.epochs[from - 1]?.layout.drawn : undefined;
+          const drawn = drawUi({ structure, drawn: epoch.layout.drawn, before: changedFrom ?? previous?.layout.drawn ?? null, q, tq, out, ...(changedFrom === undefined ? {} : { revise: { since: tq - (plan.epochs[from]?.start ?? epoch.start) } }) });
           const box = epoch.layout.boxes.get(structure.key);
           if (drawn.drawn && box !== undefined) out.owners.push({ key: structure.key, id: structure.id, kind: structure.kind, layer: structure.style.layer, box, opacity: 1, phase: drawn.phase, colour: look.roles.ink, contrast: 21, tappable: false, fontPx: epoch.layout.drawn.fontPx * planeScale(structure.style.layer, env.viewport) });
           continue;

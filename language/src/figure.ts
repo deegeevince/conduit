@@ -276,3 +276,25 @@ say aside approx from=recalled | About 70 beats a minute at rest. Valves stop it
  * the figure's parts are not shapes the brain can `drop` or `set` one by one, and the only other way to change one was to draw the whole thing again in a new scene.
  */
 export const FIGURE_EDIT = `A LABELLED DRAWING ON STAGE IS CHANGED IN PLACE, NOT DRAWN AGAIN: write \`figure <its id>\` again (a new title only if it changes), then only the lines that change, then \`end\`. A part or \`route\` line under an id the figure has replaces that one where it stands; a new id adds a part (give every new part an id of its own); \`drop <id> <id>\` takes parts or a route away. \`step\` lines, if you write any, are the whole list of steps (none leaves them as they are). Whatever you do not name stays exactly as it is, so the picture does not move; but whatever the change makes untrue goes with the part named, so drop that too. A route or a step you keep must not name a part you dropped. A new \`scene\` clears the whole drawing: it is for a new subject.`;
+
+/**
+ * How the painter plays a change to a figure that is on stage, on its own clock and whenever the lines came: each part that goes (or is put right) fades out in turn, then each part that
+ * comes (or is put right) is drawn in, then the routes, then the labels. The pacing is here so that the turn lasts as long as the change plays (`figureReviseSeconds`).
+ * `lead`: a change is never earlier than this into a turn, so that the figure as it was is on screen for the change to play from (a layout epoch is a quarter of a second at the least).
+ */
+export const FIGURE_REVISE = { lead: 0.3, leave: 0.5, leaveStagger: 0.12, enter: 0.7, enterStagger: 0.25, route: 0.6, label: 0.5, labelStagger: 0.12, most: 6 } as const;
+
+/** How long a figure's change takes to play, counted from its history (an upper bound of what the painter counts from the frames); at most `FIGURE_REVISE.most`. */
+export function figureReviseSeconds(all: readonly { readonly kind: 'drop' | 'replace' | 'add'; readonly at: number; readonly words?: true }[]): number {
+  // (the steps are only words: they are not played)
+  const history = all.filter((one) => one.words !== true);
+  const last = history.reduce((most, one) => Math.max(most, one.at), 0);
+  // the change of the last moment of the turn, and what came with it (a burst is one change)
+  const together = history.filter((one) => one.at >= last - 0.3);
+  const going = together.filter((one) => one.kind === 'drop' || one.kind === 'replace').length;
+  const coming = together.filter((one) => one.kind === 'add' || one.kind === 'replace').length;
+  const leaves = going === 0 ? 0 : (going - 1) * FIGURE_REVISE.leaveStagger + FIGURE_REVISE.leave;
+  const enters = coming === 0 ? 0 : (coming - 1) * FIGURE_REVISE.enterStagger + FIGURE_REVISE.enter;
+  const labels = coming === 0 ? 0 : (coming - 1) * FIGURE_REVISE.labelStagger + FIGURE_REVISE.label;
+  return Math.min(FIGURE_REVISE.most, leaves + enters + (coming === 0 ? 0 : FIGURE_REVISE.route) + labels);
+}

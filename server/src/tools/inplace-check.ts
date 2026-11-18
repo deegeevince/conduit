@@ -8,6 +8,9 @@
 //             its scale by at most 1% and its place in the room by at most 2 px (the figure is not laid out afresh from what is round it)
 //   drawn     the same swap of a car the brain drew with shapes (YOUR DRAWING NOW: shapes by id, callouts near them): the engine, tank and its callouts dropped, a motor drawn, the words
 //             revised and the choice of the first answer left to go (the foot of the stage empties and the column grows); the body and the wheels keep their ids and their boxes
+//   plays     the same swap arriving as a burst (every line within a few milliseconds, as a brain that called a tool first writes them) is not applied in one frame: read frame by frame
+//             (`window.__stage.figureFrames`), the engine is still partly visible 200 ms after its drop, the new motor is partly drawn some moments later, the engine has gone before the
+//             motor is drawn, the motor's label comes last, and the whole takes a few seconds
 //   console   no console error and no failed request
 //
 // The language half is `pnpm timeline` (`fb-100`: the schedule, and the brief that names the parts and teaches this). Run by `pnpm check` (as `fb-100`) and standalone: `tsx inplace-check.ts --url <server>`.
@@ -70,7 +73,103 @@ export async function inplaceGroup(base: string, dir: string, timeoutMs: number,
   const scenes: LensScene[] = [];
   for (const words of ['shorter', 'revised'] as const) scenes.push(await inplaceCase(base, dir, timeoutMs, note, words));
   scenes.push(await drawnCase(base, dir, timeoutMs, note));
+  scenes.push(await playsCase(base, dir, timeoutMs, note));
   return scenes;
+}
+
+interface FrameView {
+  readonly key: string;
+  readonly id: string;
+  readonly kind: 'shape' | 'text';
+  readonly opacity: number;
+  readonly progress: number;
+}
+
+/** how much of the figure's part `id` is shown in these frames: its biggest opacity, and its stroke drawn so far (the smallest) */
+const partOf = (frames: readonly FrameView[], id: string): { readonly seen: number; readonly progress: number } => {
+  const mine = frames.filter((frame) => frame.id === id && frame.kind === 'shape' && !/\/(label|route):/.test(frame.key));
+  return { seen: mine.reduce((most, frame) => Math.max(most, frame.opacity), 0), progress: mine.length === 0 ? 0 : mine.reduce((least, frame) => Math.min(least, frame.progress), 1) };
+};
+const labelOf = (frames: readonly FrameView[], id: string): number => frames.filter((frame) => frame.id === id && frame.kind === 'text' && /\/label:/.test(frame.key)).reduce((most, frame) => Math.max(most, frame.progress * frame.opacity), 0);
+
+async function playsCase(base: string, dir: string, timeoutMs: number, note: (text: string) => void): Promise<LensScene> {
+  const began = Date.now();
+  note('fb-100: a change to a figure arriving as a burst plays in order');
+  const results: CheckResult[] = [];
+  const add = (check: string, problems: readonly string[], good: string): void => void results.push({ turn: 0, check, verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? good : problems.join('; ') });
+  try {
+    const tab = await Tab.open(LABEL_SCREEN.width, LABEL_SCREEN.height);
+    try {
+      const options: Options = { url: base, screens: [], out: dir, turns: new Set(), timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
+      const conv = new Conversation(tab, options, LABEL_SCREEN, dir);
+      await tab.send('DOM.enable');
+      await conv.start();
+      const play = async (script: string): Promise<string> => {
+        const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(script)})).then(() => null, (e) => String(e && e.message || e))`);
+        return played !== null ? `the script would not play: ${played}` : conv.rest(true);
+      };
+      const problems: string[] = [];
+      const first = await play(CAR);
+      if (first !== '') problems.push(first);
+      const second = await play(SWAP('revised'));
+      if (second !== '') problems.push(second);
+      // the turn is played back from the start (seek), so that it can be read at any second of it
+      await tab.eval<number>('(window.__stage.seek(0), 0)');
+      const lines = await tab.eval<{ text: string; start: number; end: number }[]>(`window.__stage.lines().map((l) => ({ text: l.text, start: l.start, end: l.end }))`);
+      const dropLine = lines.find((line) => /drop engine/.test(line.text));
+      const edits = lines.filter((line) => /^(row car \||figure car)/.test(line.text) || /^(drop|rect|route|step) /.test(line.text));
+      if (dropLine === undefined) problems.push('the turn has no line that drops the engine');
+      else {
+        const spread = Math.max(...edits.map((line) => line.start)) - Math.min(...edits.map((line) => line.start));
+        if (spread > 0.5) problems.push(`the lines of the change did not arrive as a burst (they span ${spread.toFixed(2)} s: ${edits.map((line) => `${line.start.toFixed(2)} ${line.text.slice(0, 18)}`).join(' / ')}): this is not the case the check is for`);
+        const frames = (seconds: number): Promise<FrameView[]> => tab.eval<FrameView[]>(`window.__stage.figureFrames(${seconds})`);
+        const at = dropLine.start;
+        const before = await frames(at - 0.05);
+        const early = await frames(at + 0.2);
+        if (partOf(before, 'engine').seen < 0.5) problems.push('before the drop the engine is not drawn: the figure as it was is not shown');
+        const was = partOf(before, 'engine').seen;
+        const soon = partOf(early, 'engine').seen;
+        if (!(soon > 0.05 * was && soon < 0.95 * was)) problems.push(`200 ms after its drop the engine is shown at ${(100 * soon / Math.max(1e-6, was)).toFixed(0)}% (it should be fading: partly visible)`);
+        if (partOf(early, 'motor').seen > 0.05) problems.push('200 ms after the drop the new motor is already drawn: what goes should go before what comes');
+        // every tenth of a second to seven: when the engine has gone, when the motor is first drawn and when it is whole, when its label comes
+        let gone = -1;
+        let drawn = -1;
+        let whole = -1;
+        let named = -1;
+        let partly = false;
+        let last = 0;
+        const everything: FrameView[][] = [];
+        for (let step = 0; step <= 70; step += 1) everything.push(await frames(at + step / 10));
+        everything.forEach((now, step) => {
+          const t = step / 10;
+          if (gone < 0 && partOf(now, 'engine').seen < 0.02) gone = t;
+          const motor = partOf(now, 'motor');
+          if (drawn < 0 && motor.seen > 0.02) drawn = t;
+          if (motor.seen > 0.02 && motor.progress > 0.1 && motor.progress < 0.9) partly = true;
+          if (whole < 0 && motor.seen > 0.98 && motor.progress > 0.99) whole = t;
+          if (named < 0 && labelOf(now, 'motor') > 0.02) named = t;
+          const moving = partOf(now, 'motor').seen < 0.99 || partOf(now, 'motor').progress < 0.99 || partOf(now, 'pack').progress < 0.99 || labelOf(now, 'motor') < 0.99;
+          if (moving) last = t;
+        });
+        if (problems.length > 0) problems.push('frames: ' + everything.slice(0, 40).map((now, step) => `${(step / 10).toFixed(1)}s e${partOf(now, 'engine').seen.toFixed(2)} m${partOf(now, 'motor').seen.toFixed(2)}/${partOf(now, 'motor').progress.toFixed(2)} n${now.length}`).join(' | '));
+        if (!partly) problems.push('the motor was never seen partly drawn (its stroke part-way along) in seven seconds');
+        if (gone < 0) problems.push('the engine had not gone seven seconds after its drop');
+        if (drawn >= 0 && gone >= 0 && drawn + 0.05 < gone) problems.push(`the motor is drawn (${drawn.toFixed(1)} s) before the engine has gone (${gone.toFixed(1)} s)`);
+        if (named >= 0 && whole >= 0 && named + 0.05 < whole) problems.push(`the motor's label (${named.toFixed(1)} s) comes before the motor is whole (${whole.toFixed(1)} s)`);
+        if (whole < 0) problems.push('the motor was not whole seven seconds after the drop');
+        if (last < 1) problems.push(`the change took ${last.toFixed(1)} s to play: it should take a few seconds, not a frame`);
+        add('fb-100-plays-order', problems, `the burst played in order: the engine fades (gone by ${gone.toFixed(1)} s), the motor is drawn in from ${drawn.toFixed(1)} s (whole at ${whole.toFixed(1)} s), its label at ${named.toFixed(1)} s; ${last.toFixed(1)} s in all`);
+      }
+      if (dropLine === undefined) add('fb-100-plays-order', problems, '');
+      const drained = tab.drain();
+      add('fb-100-plays-console', [...drained.consoleErrors, ...drained.failedRequests].map((entry) => entry.text).slice(0, 3), 'no console errors or failed requests');
+    } finally {
+      await tab.close();
+    }
+  } catch (error) {
+    add('fb-100-plays', [error instanceof Error ? error.message : String(error)], '');
+  }
+  return { name: 'fb-100-plays', picture: '', results, seconds: (Date.now() - began) / 1000 };
 }
 
 /** a car as the brain draws one with shapes: parts by id and a callout on each part that is named */

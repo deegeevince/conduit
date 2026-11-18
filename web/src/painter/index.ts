@@ -23,7 +23,7 @@ import type { Recording } from '../contracts/film';
 import { noteArrivals as noteArrivalsInto } from './arrivals';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
-import type { BindingView, ControlView, FormulaView, LineView, MathBlockView, MathHit, MotionView, Painter, PainterEvents, PainterOptions, PainterSnapshot, StageElementView, UiMockup } from '../contracts/painter';
+import type { BindingView, ControlView, FigureFrameView, FormulaView, LineView, MathBlockView, MathHit, MotionView, Painter, PainterEvents, PainterOptions, PainterSnapshot, StageElementView, UiMockup } from '../contracts/painter';
 import { REST_POSE } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { PlayClock, pinnedWallTime } from './clock';
@@ -2220,6 +2220,15 @@ export function createPainter(options: PainterOptions): Painter {
     },
 
     leaders: () => leadersOf(timeline, timeline.schedule, clock.read().playhead),
+
+    figureFrames: (seconds): readonly FigureFrameView[] => {
+      const frame = timeline.frameAt({ time: seconds, ambient: seconds, wallTime: 0, clock: 'idle' });
+      const owned = (key: string): boolean => key.split('/').length >= 3;
+      return [
+        ...frame.figures.filter((figure) => figure.kind === 'shape' && owned(figure.key)).map((figure) => ({ key: figure.key, id: figure.id, kind: 'shape' as const, opacity: figure.opacity, progress: figure.kind === 'shape' ? (figure.stroke?.progress ?? 1) : 1 })),
+        ...frame.elements.filter((element) => owned(element.key)).map((element) => ({ key: element.key, id: element.id, kind: 'text' as const, opacity: element.opacity, progress: element.runs.reduce((most, run) => Math.max(most, run.reveal), 0) })),
+      ];
+    },
 
     bindings: (): readonly BindingView[] => {
       const schedule = timeline.schedule;

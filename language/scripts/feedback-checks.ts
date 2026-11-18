@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import {
   EMPTY_STAGE,
   FIGURE_EDIT,
+  FIGURE_REVISE,
   FULL_CAPABILITIES,
   LEAD_WINDOW,
   MATHS_CHAPTER,
@@ -26,6 +27,7 @@ import {
   asksForMaths,
   buildSystemPrompt,
   buildTurnBrief,
+  figureReviseSeconds,
   matchAnswer,
   parseLine,
   parseScript,
@@ -338,6 +340,15 @@ function fb100(): void {
   expect('fb-100: the route of the same name is replaced, not doubled', textsOf(after).filter((row) => row.startsWith('route power')), ['route power ink=accent via=pack,motor,wheel']);
   expect('fb-100: the steps written are the whole list', textsOf(after).filter((row) => row.startsWith('step')), ['step show=pack,motor | The battery feeds the motor.', 'step show=wheel | The wheels turn.']);
   expect('fb-100: the title is the new one', second.score.schedule.elements.find((element) => element.id === 'car' && element.exit === null)?.text, 'The same car, electric');
+
+  // what the turn did to the figure is kept in its history, at the time it came, for the painter to play; the turn lasts as long as the change plays; what stands afterwards is whole
+  const carNow = second.score.schedule.elements.find((element) => element.id === 'car' && element.exit === null);
+  const history = carNow?.figure?.kind === 'structure' ? (carNow.figure.history ?? []) : [];
+  const played = history.filter((change) => change.words !== true);
+  expect('fb-100: the figure keeps what the turn did to it: the three parts dropped, the two added, the route put right (the steps are words and are not played), each from the lead and none before it', [played.filter((change) => change.kind === 'drop').length, played.filter((change) => change.kind === 'add').length === 2, played.filter((change) => change.kind === 'replace').length === 1, history.every((change) => change.at >= FIGURE_REVISE.lead)], [3, true, true, true]);
+  expect('fb-100: the turn lasts as long as the change plays', second.score.schedule.end >= FIGURE_REVISE.lead + figureReviseSeconds(history) - 1e-6, true);
+  expect('fb-100: a change plays in at most six seconds, however much it changes', figureReviseSeconds(Array.from({ length: 40 }, (_, index) => ({ kind: index % 2 === 0 ? ('drop' as const) : ('add' as const), at: 1 }))) <= FIGURE_REVISE.most, true);
+  expect('fb-100: what the turn changed is not carried on: the figure that stands has no history', (after.elements.find((element) => element.id === 'car')?.figure as { history?: unknown } | null | undefined)?.history, undefined);
 
   // a part said again under its id is replaced where it stands (its place in the list and its time are kept); the same words are nothing
   const recoloured = turn(['figure car', 'rect engine 70,44 13x12 in=body fill=copper label="engine"', 'path body fill=steel label="body" | M6 62 L6 50 C6 46 10 44 16 43 L90 41 L90 62 Z', 'end'], 'prompt', first.stage).stage;
