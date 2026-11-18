@@ -45,6 +45,16 @@ bind olmonth | move olearth along=olring
 say | The Earth goes once round the Sun as the month goes from 0 to 12.
 wait 1
 
+# fb-090: a photographed word problem is shown first, a callout on each number the question gives, and then the working: the photo leaves and nothing of it stands under the column
+scene fb-090 layout=figure canvas=wide
+pic p2 from=u1 aspect=1.5
+say c1 callout at=30,35 in=p2 | 503 at the start
+say c2 callout at=70,60 in=p2 | 278 sold
+wait 3
+scene fb-090-working layout=stack mood=calm
+say title | 503 apples, 278 sold
+math m75 column | 503 - 278
+
 # a flowchart with multi-word edge labels and cross-links
 scene flow layout=caption
 flow car right | How a car's core parts connect
@@ -329,13 +339,3 @@ scene formula-error layout=stack brisk
 math f3 formula | x = \notacommand{2} + 1
 say | The line above is not TeX that can be read.
 wait 1
-
-# fb-090: a photographed word problem is shown first, a callout on each number the question gives, and then the working: the photo leaves and nothing of it stands under the column
-scene fb-090 layout=figure canvas=wide
-pic p2 from=u1 aspect=1.5
-say c1 callout at=30,35 in=p2 | 503 at the start
-say c2 callout at=70,60 in=p2 | 278 sold
-wait 3
-scene fb-090-working layout=stack mood=calm
-say title | 503 apples, 278 sold
-math m75 column | 503 - 278
