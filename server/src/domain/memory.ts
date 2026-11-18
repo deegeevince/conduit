@@ -1,4 +1,4 @@
-import { LEAD_WINDOW, STANDING_LIMITS, describeFigure, owedFrom, owedStanding } from '@conduit/language';
+import { LEAD_WINDOW, STANDING_LIMITS, describeFigure, owedFrom, owedStanding, shownMaths } from '@conduit/language';
 import { withArtNotes } from '../art/notes';
 import type { BackEventRecord, CriticFinding, OwedFinding, ReviewOutcome, Services, ShownItem, TurnContext, TurnMemory, TurnReport } from '@conduit/language';
 import type { ActiveTurn, Session } from './session';
@@ -56,7 +56,7 @@ export function holdStanding(session: Session, ask: StandingAsk): readonly strin
  * shown so far matched against the server's own schedule, otherwise nothing.
  * What the brain wrote but nobody saw is never remembered.
  */
-export function rememberTurn(turn: ActiveTurn, report: TurnReport | null, snapshot: boolean): TurnMemory {
+export function rememberTurn(turn: ActiveTurn, report: TurnReport | null, snapshot: boolean, maths = false): TurnMemory {
   if (report !== null) {
     return {
       turn: turn.id,
@@ -69,6 +69,7 @@ export function rememberTurn(turn: ActiveTurn, report: TurnReport | null, snapsh
       problems: [...turn.problems],
       snapshot,
       ...reviewOf(turn),
+      ...(maths || shownMaths(report.shown) ? { maths: true } : {}),
     };
   }
   const unreported = { sight: null, skippedAt: null, problems: [...turn.problems], snapshot, ...reviewOf(turn) } as const;
@@ -77,11 +78,13 @@ export function rememberTurn(turn: ActiveTurn, report: TurnReport | null, snapsh
     const span = turn.score.schedule.elements.find((element) => element.id === id && !element.carried);
     if (span !== undefined) shown.push({ id, kind: span.kind, text: span.figure === null ? span.text : describeFigure(span.figure), struck: false, partial: false });
   }
+  // (a turn the person never saw was still about sums if they asked: the next turn is told)
+  const about = maths || shownMaths(shown) ? ({ maths: true } as const) : {};
   if (shown.length === 0) {
     const failed = turn.endReason === 'failed' || turn.endReason === 'timeout';
-    return { turn: turn.id, input: turn.input, outcome: failed ? 'failed' : 'unseen', playhead: null, shown: [], ...unreported };
+    return { turn: turn.id, input: turn.input, outcome: failed ? 'failed' : 'unseen', playhead: null, shown: [], ...unreported, ...about };
   }
-  return { turn: turn.id, input: turn.input, outcome: 'interrupted', playhead: turn.clock?.playhead ?? null, shown, ...unreported };
+  return { turn: turn.id, input: turn.input, outcome: 'interrupted', playhead: turn.clock?.playhead ?? null, shown, ...unreported, ...about };
 }
 
 function reviewOf(turn: ActiveTurn): { review?: ReviewOutcome } {

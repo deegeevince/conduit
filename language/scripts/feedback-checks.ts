@@ -6,6 +6,8 @@
 //   fb-008  a markdown bullet or numbered item that is no Series ("- **Mercury** …", "* x", "1. First") is said as text, marker and emphasis off, with a warning that says so, not refused
 //   ro-3a   (PLAN-romer 3a) "show me the maths" is a request to SEE a calculation, not to be coached through one: the chapter the words carry opens by saying which case is which,
 //           and coaches only the learner who will do the working; the formula line it teaches reads
+//   fb-101  the written method is named in the fixed prompt for any sum worked by hand (a photo of a sheet, words that say nothing of maths), and the chapter rides with the
+//           turns of a thread of sums: a photo or the pen's drawing with vague words, "in columns", "what's next" (a replay of the shape of a real thread, turn by turn)
 //   fb-061  an `ask` accepts the ways of writing ONE answer: a thousands comma or space is part of a number; a step of the working that was listed with the answer is
 //           dropped with a reason; a hint is refused only when it shows what the ask really accepts
 //
@@ -17,19 +19,27 @@ import {
   FULL_CAPABILITIES,
   LEAD_WINDOW,
   MATHS_CHAPTER,
+  MATHS_WARM,
   REFERENCE_SCREEN,
   accepts,
   answerValues,
+  asksForLiveApp,
   asksForMaths,
   buildSystemPrompt,
   buildTurnBrief,
+  carriesMaths,
   matchAnswer,
   parseLine,
   parseScript,
+  LineNormalizer,
   LineReader,
+  TurnScore,
+  settle,
+  shownMaths,
+  startsMaths,
   textHolds,
 } from '../src/index';
-import type { TechniqueCard, TurnContext } from '../src/index';
+import type { StageBase, TechniqueCard, TurnContext, TurnInput, TurnMemory } from '../src/index';
 
 let passed = 0;
 let ok = true;
@@ -258,6 +268,111 @@ function fb008(): void {
   expect('fb-008: words the brain wrote with `say |` carry no such code', readRaw(['say | The planets are dots.']).codes, []);
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// fb-101: a thread of sums keeps the written method in the brief, and the fixed prompt names it for any sum worked by hand
+
+/** The stage a few lines of Series leave, as the page would (a live app, a written method). */
+function stageOf(lines: readonly string[]): StageBase {
+  const score = new TurnScore(EMPTY_STAGE);
+  const reader = new LineReader();
+  let auto = 0;
+  const normalizer = new LineNormalizer(() => `x${(auto += 1)}`);
+  lines.forEach((raw, index) => {
+    const read = reader.read(raw);
+    if (read.kind !== 'line') throw new Error(`fb-101 check: does not parse: ${raw}`);
+    const normalized = normalizer.normalize(read.line);
+    if (normalized.line === null) throw new Error(`fb-101 check: dropped: ${raw}`);
+    score.push(normalized.line, index + 1, 0);
+  });
+  return settle(score.schedule, EMPTY_STAGE, score.schedule.end + 1);
+}
+
+const MATHS_CARD: TechniqueCard = { id: 'seed:teach-young-learner', title: 'A maths question to work out', when: 'a child needs help with a maths question', example: ['scene stack', 'say title | Flowers', 'ask a1 is=12 | How many flowers? __'] };
+const MARK = 'A column sum, take-away or times as on paper is ONE line';
+
+/** One turn of a thread as the conductor sees it: what was said, what came with it, what the library chose, and what stood on the stage. */
+interface Beat {
+  readonly input: TurnInput;
+  readonly cards?: readonly TechniqueCard[];
+  readonly stage?: StageBase;
+}
+const say = (text: string, more: { images?: readonly string[]; ink?: boolean } = {}): TurnInput => ({
+  kind: 'prompt',
+  text,
+  ...(more.images === undefined ? {} : { images: more.images }),
+  ...(more.ink === true ? { marks: { image: 'u9', space: { w: 820, h: 971 }, crop: { x: 0, y: 0, w: 820, h: 400 }, strokes: [], regions: [] } } : {}),
+});
+
+/** Plays a thread beat by beat, setting each turn's memory as the server does (`startsMaths`), and says which beats carried the chapter. */
+function thread(beats: readonly Beat[]): { readonly carried: readonly boolean[]; readonly history: readonly TurnMemory[] } {
+  const history: TurnMemory[] = [];
+  const carried: boolean[] = [];
+  beats.forEach((beat, index) => {
+    const context: TurnContext = { ...contextWith(beat.cards ?? []), stage: beat.stage ?? EMPTY_STAGE, history: [...history] };
+    carried.push(buildTurnBrief(context, beat.input).includes(MARK));
+    history.push({ turn: `t${index + 1}`, input: beat.input, outcome: 'finished', playhead: null, shown: [], sight: null, skippedAt: null, problems: [], snapshot: false, ...(startsMaths(context, beat.input) ? { maths: true } : {}) });
+  });
+  return { carried, history };
+}
+
+function fb101(): void {
+  const system = (structures = FULL_CAPABILITIES.structures): string =>
+    buildSystemPrompt({ capabilities: { ...FULL_CAPABILITIES, structures }, services: { paint: false, sight: 'snapshot', review: true, critic: true, refine: true, uploads: true, art: true } });
+  // 1. The fixed prompt names the written method for any sum worked by hand, with the form, so a turn that carries no chapter is never left to build one from loose digits.
+  const named = system();
+  expect('fb-101: the fixed prompt names `math` for a sum worked by hand, typed or in a photo, with its form', [named.includes('`math m1 column|times|split|bond | 43 × 8`'), /worked by hand, typed or in a photo/.test(named)], [true, true]);
+  expect('fb-101: ...and says never digits or boxes the brain places', /never digits or boxes you place/.test(named), true);
+  expect('fb-101: a painter that does not paint `math` is not taught it', system(FULL_CAPABILITIES.structures.filter((name) => name !== 'math')).includes('`math m1'), false);
+
+  // 2. A photo and vague words in a thread that is about sums carries the chapter; the same turn in a thread that is not does not.
+  const vague = say('okay can you just do the first three for me', { images: ['u7'] });
+  const about = [{ input: say('help my son with his multiplication homework'), stage: EMPTY_STAGE }];
+  const warm = thread([...about, { input: vague }]);
+  expect('fb-101: a photo with vague words in a thread about sums carries the maths chapter', warm.carried, [true, true]);
+  const cold = thread([{ input: say('draw a fox by a river') }, { input: vague }]);
+  expect('fb-101: the same photo and words in a thread that is not about sums does not', cold.carried, [false, false]);
+  // 3. How long it stays warm: plain words for `MATHS_WARM.words` turns, a photo or the pen's drawing for `MATHS_WARM.picture`, never a turn the server makes itself
+  const filler = (n: number): Beat[] => Array.from({ length: n }, (_, i) => ({ input: say(`tell me about the planet number ${i}`) }));
+  const lasts = (n: number, input: TurnInput): boolean => thread([{ input: say('how do I work out 47 x 6? help me with this sum') }, ...filler(n), { input }]).carried.at(-1) ?? false;
+  expect('fb-101: plain words are carried the chapter for a while after a sum', [lasts(MATHS_WARM.words - 1, say('and what is next')), lasts(MATHS_WARM.words, say('and what is next'))], [true, false]);
+  expect('fb-101: a photo or the pen\'s drawing keeps it warm longer', [lasts(MATHS_WARM.picture - 1, say('look at this', { images: ['u2'] })), lasts(MATHS_WARM.picture - 1, say('look at what I drew', { ink: true })), lasts(MATHS_WARM.picture, say('look at this', { images: ['u2'] }))], [true, true, false]);
+  const settled: TurnMemory = { turn: 't1', input: say('x'), outcome: 'finished', playhead: null, shown: [], sight: null, skippedAt: null, problems: [], snapshot: false, maths: true };
+  expect('fb-101: a repair the server makes itself does not carry it', carriesMaths({ ...contextWith(), history: [settled] }, { kind: 'repair', of: 't1' } as TurnInput), false);
+  // a turn that carried it only because the thread was warm does not keep the thread warm: the words, the card or the written method do
+  const decays = thread([{ input: say('help with this sum: 47 x 6') }, ...filler(MATHS_WARM.words), { input: say('and what is next') }, { input: say('and then?') }]).carried;
+  expect('fb-101: the thread does not stay warm by its own carrying', [decays.at(-2), decays.at(-1)], [false, false]);
+  // a written method the brain used makes the thread one of sums whatever was asked (its memory is `shown`)
+  expect('fb-101: a written method on the stage is a thread of sums', startsMaths({ ...contextWith(), stage: stageOf(['scene stack', 'math m1 times | 43 × 8', 'say | Your turn.']) }, say('ok')), true);
+  expect('fb-101: a written method that was shown is read from the memory of what the person saw', [shownMaths([{ text: 'written method times 43 × 8: blank ans-ones' }]), shownMaths([{ text: 'typeset formula c = d / t' }]), shownMaths([{ text: 'a table of planets' }])], [true, true, false]);
+
+  // 4. The shape of a real thread (the turns of the owner's crossword and then a sheet of multiplications, one by one, and what the library chose for each):
+  //    a live app answers the first turns, then a sheet comes as a photo, then the pen, then more of the same sheet.
+  const app = stageOf(['scene caption', 'app xw height=300 | Crossword', '| <p>grid</p>', 'say | A grid.']);
+  const real = thread([
+    { input: say('digitise this crossword, I want to work on it here', { images: ['u1'] }), cards: [MATHS_CARD] },
+    { input: say("can't you paint the grid and make it interactive here?"), stage: app },
+    { input: say('why did you redraw it all?'), stage: app, cards: [MATHS_CARD] },
+    { input: { kind: 'tap', id: 'x16', text: "Redraw it on the canvas, I'll use the pen" }, stage: app, cards: [MATHS_CARD] },
+    { input: say('please look at this photo', { images: ['u4'] }), stage: app },
+    { input: say('the numbers are in the wrong place') },
+    { input: say('can you render this onto the canvas for me', { images: ['u5'] }), cards: [MATHS_CARD] },
+    { input: say('can you render it properly so that I can actually use pen to work them out, just do the first five') },
+    { input: say("why can't you render it in columns? so frustrating") },
+    { input: say('please look at what I drew', { ink: true }) },
+    { input: say('okay can you just do the first three for me', { images: ['u7'] }) },
+    { input: say("can you check the rendering, it's not aligned?"), cards: [] },
+    { input: say('please look at what I drew', { ink: true }) },
+    { input: say('visually') },
+    { input: say("okay it's 21 but then what's next?") },
+  ]);
+  expect('fb-101: the replay: the live-app turns of the crossword carry no maths chapter and start no thread', real.carried.slice(1, 5), [false, false, false, false]);
+  expect('fb-101: the replay: from the first sheet on, every turn carries it (the photo, the pen\'s words, "in columns", the drawing, the three, the alignment, "what\'s next")', real.carried.slice(6), [true, true, true, true, true, true, true, true, true]);
+  // a live app is its own answer: the maths card the library picked for a crossword's turn is not a thread of sums
+  expect('fb-101: a turn the live app answers (on stage, or asked for) does not start a thread of sums', [startsMaths({ ...contextWith([MATHS_CARD]), stage: app }, say('why did you redraw it all?')), startsMaths(contextWith([MATHS_CARD]), say('make me a working times tables quiz I can actually use')), startsMaths(contextWith([MATHS_CARD]), say('why did you redraw it all?'))], [false, false, true]);
+  // the app rule's other half: "so I can use the pen" is how a person writes, not a request for a live app
+  expect('fb-101: "use the pen to work them out" is not a request for a live app, "a quiz I can actually use" still is', [asksForLiveApp('so that I can actually use pen to work them out'), asksForLiveApp('with the pencil so I can write the answers'), asksForLiveApp('make me a quiz I can actually use')], [false, false, true]);
+}
+
 /** Run by `pnpm timeline`. */
 export function feedbackChecks(): boolean {
   fb058();
@@ -265,6 +380,7 @@ export function feedbackChecks(): boolean {
   fb008();
   ro3a();
   fb061();
+  fb101();
   process.stdout.write(`\nfeedback checks: ${passed} held${ok ? '' : ', some failed'}\n`);
   return ok;
 }

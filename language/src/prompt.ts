@@ -25,7 +25,7 @@ import { asksForLiveApp, asksToMakeGame } from './app';
 import { FIGURE_CHAPTER, asksForFigure } from './figure';
 import { INTERFACE_CHAPTER } from './interface';
 import { ASK_CHAPTER, ASK_CHAPTER_WITH_DOCUMENT, DOCUMENT_CHAPTER, carriesAsk, carriesDocument, documentBlocks, hasLesson, usesParts } from './teach';
-import { MATHS_CHAPTER, asksForMaths } from './problem';
+import { MATHS_CHAPTER, aboutMaths, carriesMaths } from './problem';
 import { inkBrief } from './ink';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
@@ -435,6 +435,8 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
       : draws
         ? "- A thing, a place, a mechanism, a comparison, a set of numbers: draw it and label it, and keep every fact a good plain answer would give: numbers and names on the drawing, the rest in short lines. Words are cheap; a missing fact is not. A comparison covers every row a good table would (cost, upkeep, lifespan, limits, risks), as paired lines beneath the two shapes. Compare with matching shapes side by side (bars sized by the numbers, a column each), never two lists of words."
         : '',
+    // fb-101. The written method is named here for good, so a sum worked by hand (a photo of a sheet, words that say nothing of maths) is never built from loose digits; its chapter rides in the brief on a maths turn.
+    structures.includes('math') ? '- A sum worked by hand, typed or in a photo: one `math m1 column|times|split|bond | 43 × 8` line each, in a `scene stack`; never digits or boxes you place. The painter aligns them and the pen writes in them.' : '',
     draws ? '- A process, a breakdown, how something works: lay it out to read whole, the steps numbered and all on stage beside the picture, each step\'s part lit or labelled. Asked step by step (instructions, a recipe, a build, a how-to), or to go one at a time: draw the finished picture with its parts at `opacity=0` and a stepper, `pick s steps | a | b`, `bind s=a | set part opacity=1`; a document of parts only when a document, a checklist or a learner\'s worksheet is the ask. Arrows that only page through text are what to avoid.' : '',
     controls.includes('slider') ? '- Something that depends on a quantity or a choice (an angle, a rate, a mode): hand over the control, bound to the drawing.' : '',
     draws
@@ -1096,6 +1098,26 @@ export function standingText(standing: readonly string[] | undefined): string | 
     .join('\n')}`;
 }
 
+/**
+ * Whether this turn's answer is a live app: the words ask for something that works, a game is asked for, or an app already stands on the stage. Then it is the answer
+ * and the other chapters (a written method, an ask, a figure) are not carried.
+ */
+export function liveAppWanted(context: Pick<TurnContext, 'stage' | 'capabilities' | 'standing' | 'techniques'>, input: TurnInput): boolean {
+  const appOnStage = context.stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'app');
+  // (a technique that writes a document of parts, a recipe with a time on each step, is the answer to "walk me through it with a timer": the words of an app do not take over from it)
+  const makeApp = context.capabilities.structures.includes('app') && (input.kind === 'prompt' || input.kind === 'tap') && asksToMakeGame(input.text);
+  const noCode = (context.standing ?? []).some((held) => /\b(no|without|never|avoid)\s+(code|apps?)\b|native\b/i.test(held));
+  return !noCode && context.capabilities.structures.includes('app') && ((input.kind === 'prompt' && asksForLiveApp(input.text) && !usesParts(context.techniques)) || makeApp || appOnStage);
+}
+
+/**
+ * fb-101. Whether this turn starts, or keeps up, a thread of sums: it is about a calculation worked by hand (`aboutMaths`) and is not a live app's turn. The conductor
+ * remembers it (`TurnMemory.maths`), and the turns after it carry the maths chapter while the thread is warm (`carriesMaths`).
+ */
+export function startsMaths(context: Pick<TurnContext, 'stage' | 'capabilities' | 'standing' | 'techniques'>, input: TurnInput): boolean {
+  return aboutMaths(context, input) && !liveAppWanted(context, input);
+}
+
 /** The per-turn message: what the brain cannot know by itself, then what the user just said. */
 export function buildTurnBrief(context: TurnContext, input: TurnInput, form: BriefForm = 'full', builtFor?: Capabilities, about?: AboutYou): string {
   const { stage, history, heard, screen } = context;
@@ -1120,11 +1142,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     if (about.news !== undefined && about.news !== null && about.news !== '') parts.push(newsText(about.news));
   }
   // A live app is taught when the words ask for something that works, or when one is on stage to be changed; then it is the answer, and a tune or a mock-up is not also taught.
-  const appOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'app');
-  // (a technique that writes a document of parts, a recipe with a time on each step, is the answer to "walk me through it with a timer": the words of an app do not take over from it)
   const makeApp = context.capabilities.structures.includes('app') && (input.kind === 'prompt' || input.kind === 'tap') && asksToMakeGame(input.text);
-  const noCode = (context.standing ?? []).some((held) => /\b(no|without|never|avoid)\s+(code|apps?)\b|native\b/i.test(held));
-  const liveApp = !noCode && context.capabilities.structures.includes('app') && ((input.kind === 'prompt' && asksForLiveApp(input.text) && !usesParts(context.techniques)) || makeApp || appOnStage);
+  const liveApp = liveAppWanted(context, input);
   if (liveApp) parts.push(APP_CHAPTER.trimEnd());
   // `tune` is taught when the words are about music, or when a tune is already on stage to be changed; never in the system prompt, which is full.
   if (context.capabilities.structures.includes('tune') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune')) && (asksForMusic(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune'))) parts.push(TUNE_CHAPTER);
@@ -1139,12 +1158,9 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   // FG2: a labelled drawing is taught when the words ask for one, or while one is on stage to be changed; never in the system prompt.
   const figureOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'figure');
   if (context.capabilities.structures.includes('figure') && !liveApp && ((input.kind === 'prompt' && asksForFigure(input.text)) || figureOnStage)) parts.push(FIGURE_CHAPTER);
-  // A maths question the person answers is a `math` block (a written method) or an `ask` like any other: taught when the words are one, or when the choices of a photo's questions are on stage (a tap on one gives its question); never in the system prompt.
-  const questionsOnStage = stage.elements.some((element) => element.style.tap && /^\s*which one first\b/i.test(element.text)) || stage.elements.some((element) => element.text.toLowerCase().includes('which one first'));
-  // (also when the library chose the maths card for these words, which reads them better than a pattern does, and while a written method is on stage to be changed)
-  const mathsCard = (context.techniques ?? []).some((card) => card.id === 'seed:teach-young-learner');
-  const mathOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'math');
-  if (!liveApp && (((input.kind === 'prompt' || input.kind === 'tap') && (asksForMaths(input.text) || mathsCard)) || questionsOnStage || mathOnStage)) parts.push(MATHS_CHAPTER);
+  // A maths question the person answers is a `math` block (a written method) or an `ask` like any other: taught when the turn is about one (its words, the library's maths card, a written method or a photo's questions on stage)
+  // and while the thread of sums is warm (`carriesMaths`, fb-101: a turn of "in columns" or "Please look at what I drew" says nothing a cue could read, and the fixed prompt only names the method); never in the system prompt.
+  if (!liveApp && carriesMaths(context, input)) parts.push(MATHS_CHAPTER);
   if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
   if (drawsNow && context.services.art === true) parts.push(ART_BRIEF);
   if (drawsNow && context.canvas === true) parts.push(PAINT_LOOKS);
