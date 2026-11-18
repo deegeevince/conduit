@@ -440,6 +440,9 @@ const mockup: readonly TurnDef[] = [
       }
       const strokes = (await inked()) ? 1 : 0;
       const words = 'make this bigger and clearer';
+      // docked down the side (a wide landscape screen) the words field is behind its button
+      await tab.eval(`(() => { const b = document.querySelector('.ink-stage .ink-btn--words'); if (b && b.getClientRects().length > 0) b.click(); })()`);
+      await sleep(200);
       const field = await tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', '.ink-bar__words');
       if (field !== null) {
         await tab.tap(field.x + field.w / 2, field.y + field.h / 2);

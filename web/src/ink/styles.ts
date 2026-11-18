@@ -15,6 +15,9 @@ export const INK_CSS = `
 .ink__base,.ink__live{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .ink-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px;box-sizing:border-box;font:500 14px/1 system-ui,sans-serif;color:var(--ink-ui-text,#1f2933);background:var(--ink-ui-ground,#fff);border:1px solid var(--ink-ui-line,rgba(0,0,0,.15));border-radius:14px;box-shadow:0 2px 10px rgba(0,0,0,.12);touch-action:manipulation;user-select:none;-webkit-user-select:none}
 .ink-bar__group{display:flex;gap:4px;align-items:center}
+.ink-bar__send{flex:1 1 auto}
+.ink-bar__scroll,.ink-bar__swatches{display:contents}
+.ink-bar .ink-swatch--current,.ink-bar .ink-btn--words,.ink-bar .ink-btn--send .ink-btn__icon{display:none}
 .ink-bar__group+.ink-bar__group{padding-left:6px;border-left:1px solid var(--ink-ui-line,rgba(0,0,0,.15))}
 .ink-btn{min-width:44px;min-height:44px;padding:0 10px;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;border:1px solid transparent;border-radius:10px;background:transparent;color:inherit;font:inherit;cursor:pointer;touch-action:manipulation}
 .ink-btn:hover:not(:disabled){background:var(--ink-ui-hover,rgba(0,0,0,.06))}
@@ -39,12 +42,38 @@ export const INK_CSS = `
 .ink-bar[hidden],.ink-bar [hidden]{display:none}
 .ink-bar__fold{padding-right:2px}
 .ink-bar__fold+.ink-bar__group{padding-left:0;border-left:none}
-.ink-bar--collapsed{padding:0;border-radius:22px;flex-wrap:nowrap;gap:0}
+.ink-btn--dock svg{display:block}
+/* docked down the right-hand edge: one column of 44 px buttons, centred on the stage's height, scrolling inside itself when the stage is shorter. The colours fold into one swatch and the words
+   field behind a button, each opening beside the column; the status line is a small card beside it too. */
+.ink-bar.ink-bar--vertical{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:0;padding:6px;border-radius:14px;max-width:none}
+.ink-stage__bar.ink-bar--vertical{left:auto;right:8px;top:0;bottom:0;margin:auto 0;transform:none;height:fit-content;max-height:calc(100% - 20px);max-width:none}
+.ink-bar--vertical .ink-bar__scroll{display:flex;flex-direction:column;align-items:center;gap:2px;flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;touch-action:pan-y}
+.ink-bar--vertical .ink-bar__scroll::-webkit-scrollbar{display:none}
+.ink-bar--vertical .ink-bar__scroll>.ink-bar__group{flex:0 0 auto;flex-direction:column;gap:2px}
+.ink-bar--vertical .ink-bar__scroll>.ink-bar__group+.ink-bar__group{padding:3px 0 0;margin:1px 0 0;border-left:none;border-top:1px solid var(--ink-ui-line,rgba(0,0,0,.15))}
+.ink-bar--vertical .ink-bar__scroll>.ink-bar__fold{padding:0}
+.ink-bar--vertical .ink-btn{min-width:44px;min-height:44px;padding:0}
+.ink-bar--vertical .ink-btn--fold svg{transform:rotate(-90deg)}
+.ink-bar--vertical .ink-swatch{width:44px;height:44px}
+.ink-bar--vertical .ink-swatch__dot{width:26px;height:26px}
+.ink-bar--vertical .ink-swatch--current,.ink-bar--vertical .ink-btn--words{display:inline-flex}
+.ink-bar--vertical .ink-btn--words{position:relative}
+.ink-btn--words[data-filled="true"]::after{content:"";position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--ink-ui-accent,#1565c0);box-shadow:0 0 0 2px var(--ink-ui-ground,#fff)}
+.ink-bar--vertical .ink-btn--send .ink-btn__icon{display:inline-flex}
+.ink-bar--vertical .ink-btn--send .ink-btn__label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.ink-bar--vertical .ink-bar__swatches{display:none;position:absolute;right:calc(100% + 6px);top:var(--pop-top,0px);z-index:3;flex-direction:row;gap:2px;padding:6px;box-sizing:border-box;background:var(--ink-ui-ground,#fff);border:1px solid var(--ink-ui-line,rgba(0,0,0,.15));border-radius:14px;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+.ink-bar--vertical[data-pop="colours"] .ink-bar__swatches{display:flex}
+.ink-bar--vertical .ink-bar__words{display:none;position:absolute;right:calc(100% + 6px);top:var(--pop-top,0px);z-index:3;flex:none;width:min(260px,60vw);min-width:0;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+.ink-bar--vertical[data-pop="words"] .ink-bar__words{display:block}
+.ink-bar--vertical .ink-bar__status{position:absolute;right:calc(100% + 6px);left:auto;top:auto;bottom:0;flex-basis:auto;width:max-content;max-width:min(240px,60vw);box-sizing:border-box;padding:8px 10px;line-height:1.3;border:1px solid var(--ink-ui-line,rgba(0,0,0,.15));border-radius:10px;background:var(--ink-ui-ground,#fff);box-shadow:0 2px 10px rgba(0,0,0,.12)}
+.ink-bar.ink-bar--collapsed{padding:0;border-radius:22px;flex-wrap:nowrap;gap:0}
 .ink-bar--collapsed>:not(.ink-btn--pill){display:none}
 .ink-btn--pill{border-radius:22px;width:44px}
-.ink-stage__bar.ink-bar--collapsed{left:auto;right:12px;top:10px;transform:none;max-width:none}
+.ink-stage__bar.ink-bar--collapsed{left:auto;right:12px;top:10px;bottom:auto;margin:0;height:auto;transform:none;max-width:none;max-height:none}
 .ink-stage .ink{background:rgba(255,255,255,.02)}
 @media (max-height:520px){.ink-bar{flex-wrap:nowrap;gap:2px;padding:4px;border-radius:12px;max-width:100%}.ink-bar__group{gap:0;flex:0 0 auto}.ink-bar__group+.ink-bar__group{padding-left:3px;margin-left:1px}.ink-bar__group:has(.ink-bar__words){flex:1 1 auto;min-width:0}.ink-btn{min-width:40px;min-height:40px;padding:0 6px}.ink-btn--send{padding:0 12px;white-space:nowrap}.ink-swatch{width:36px;height:40px}.ink-swatch__dot{width:22px;height:22px}.ink-bar__words{flex:1 1 60px;min-width:60px;min-height:40px;padding:0 8px}.ink-bar__status{position:absolute;left:0;right:0;top:calc(100% + 4px);flex-basis:auto;padding:4px 10px;border-radius:10px;background:var(--ink-ui-ground,#fff);box-shadow:0 2px 10px rgba(0,0,0,.12)}.ink-stage__bar{top:6px}}
+/* a short screen (a phone held across): the row has no room for the dock button and a label on Send both, so Send is the arrow (the label stays for a screen reader and for anything reading the button's text) */
+@media (max-height:520px){.ink-bar:not(.ink-bar--vertical) .ink-btn--send{padding:0}.ink-bar:not(.ink-bar--vertical) .ink-btn--send .ink-btn__icon{display:inline-flex}.ink-bar:not(.ink-bar--vertical) .ink-btn--send .ink-btn__label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 @media (prefers-reduced-motion:no-preference){.ink-btn,.ink-swatch__dot{transition:background-color .12s,box-shadow .12s}}
 `;
 
