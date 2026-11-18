@@ -510,7 +510,7 @@ Braces in text hold a value or arithmetic: \`say | At {angle}, a {round(10/tan(r
     ? `
 # The canvas
 
-Drawings live on a canvas of square units that the painter fits to the screen; 0,0 is the top-left, y runs down. Words and controls are never placed by coordinates (digits in a column aside): they flow, and a row of labelled things is a structure, not \`say at=x,y\` lines. A bare shape is an outline in ink that draws itself; \`fill=\` alone makes it flat. Shapes appear in the order written, later ones on top.
+Drawings live on a canvas of square units that the painter fits to the screen; 0,0 is the top-left, y runs down. Words and controls are never placed by coordinates: they flow, and a row of labelled things is a structure, not \`say at=x,y\` lines. A bare shape is an outline in ink that draws itself; \`fill=\` alone makes it flat. Shapes appear in the order written, later ones on top.
 
 - Put words on a drawing with \`say label near=<id> | …\`.
 - To change a shape, declare it again under the same id: it morphs into the new one.
@@ -687,6 +687,8 @@ function inputText(input: TurnInput, pastedAs?: string): string {
   if (input.kind === 'script') return 'The user played a script of their own.';
   if (input.kind === 'act') {
     const values = valuesText(input.values);
+    // fb-055. A tap on a label the brain drew is a question about what it names, asked by pointing: the person has not typed anything
+    if (input.part !== undefined) return `The user tapped the label "${input.part.label}" on your drawing (${input.id}${input.part.on === null ? '' : `, which names ${input.part.on}`}). That is them asking you to tell them about it: what it is and how it works, in the context of this conversation. Answer that, as you would a question.`;
     if (input.screen !== undefined) return `The user pressed "${input.text}" on screen ${input.screen} of your mock-up (button ${input.id}).${values === '' ? '' : ` What the screen's fields and controls hold now: ${values}.`} Answer the press: change the mock-up, or say what it did.`;
     return `The user worked your control ${input.id}: "${input.text}".${values === '' ? '' : ` Every control now: ${values}.`}`;
   }
@@ -1134,9 +1136,12 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   // FG2: a labelled drawing is taught when the words ask for one, or while one is on stage to be changed; never in the system prompt.
   const figureOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'figure');
   if (context.capabilities.structures.includes('figure') && !liveApp && ((input.kind === 'prompt' && asksForFigure(input.text)) || figureOnStage)) parts.push(FIGURE_CHAPTER);
-  // A maths question the person answers is drawn with an `ask` like any other: taught when the words are one, or when the choices of a photo's questions are on stage (a tap on one gives its question); never in the system prompt.
+  // A maths question the person answers is a `math` block (a written method) or an `ask` like any other: taught when the words are one, or when the choices of a photo's questions are on stage (a tap on one gives its question); never in the system prompt.
   const questionsOnStage = stage.elements.some((element) => element.style.tap && /^\s*which one first\b/i.test(element.text)) || stage.elements.some((element) => element.text.toLowerCase().includes('which one first'));
-  if (!liveApp && (((input.kind === 'prompt' || input.kind === 'tap') && asksForMaths(input.text)) || questionsOnStage)) parts.push(MATHS_CHAPTER);
+  // (also when the library chose the maths card for these words, which reads them better than a pattern does, and while a written method is on stage to be changed)
+  const mathsCard = (context.techniques ?? []).some((card) => card.id === 'seed:teach-young-learner');
+  const mathOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'math');
+  if (!liveApp && (((input.kind === 'prompt' || input.kind === 'tap') && (asksForMaths(input.text) || mathsCard)) || questionsOnStage || mathOnStage)) parts.push(MATHS_CHAPTER);
   if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
   if (drawsNow && context.services.art === true) parts.push(ART_BRIEF);
   if (drawsNow && context.canvas === true) parts.push(PAINT_LOOKS);

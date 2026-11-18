@@ -1,12 +1,16 @@
-// pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--scale 2] [--fps 60] [--timeout 1200]
+// pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--css 1280x720] [--scale 1.5] [--legacy] [--fps 60] [--timeout 1200]
 //
-// Films a journey (web/src/app/journey.ts) on a running server: Chrome at 1920x1080 plays `/?journey=<name>` and its screen is captured with the
-// DevTools screencast, supersampled (the page is rendered at `--scale` and handed down to the size), every frame kept with its own timestamp.
+// Films a journey (web/src/app/journey.ts) on a running server: Chrome plays `/?journey=<name>` and its screen is captured with the DevTools screencast, every
+// frame kept with its own timestamp. The film is `--size` (1920x1080). The page is laid out in `--css` CSS pixels and rendered at `--scale` device pixels to a CSS
+// pixel (a render bigger than the film is handed down to it). For a 1920x1080 film the default is 1280x720 at 1.5: every word 1.5 times as big as the same page at
+// 1920x1080 CSS pixels, which is what a person watching on a phone can read. `--legacy` is the old way: the page laid out at the film's own size and rendered at 2.
 // Out come, in <dir>:
 //
 //   <name>.mp4      H.264, a constant 60 fps, built from the timestamped frames with the system ffmpeg (the timeline is the page's real time)
 //   journey.json    window.__journey: each step's timings (page clock + performance.now()), the model as the brain reported it, and `video`: the
-//                   epoch time of the first frame (`firstFrameAt`) so any stamp's film time is (at - firstFrameAt) / 1000
+//                   epoch time of the first frame (`firstFrameAt`) so any stamp's film time is (at - firstFrameAt) / 1000. A step has `firstLine` (the first new line
+//                   to PAINT: a panel row or a stage element) and `rest` (the last visible change); `firstLineEvent` (the line arriving in the page's log) and `restSettled`
+//                   (when the page judged the stage settled) are what they were before the paint was timed. `events` names them by step, on the film's clock.
 //   focus.json      [{t, id, element:{x,y,w,h}|null, row:{x,y,w,h}|null}]: what is being performed, in pixels of the film, t in seconds from its first frame
 //   frames.json     the frame pacing: frames received each second, the longest gaps
 //
@@ -22,22 +26,21 @@ import { spawnTracked } from '../brains/claude-cli/process';
 import { claimPort, releasePort } from './check-ports';
 import { CHROME_CANDIDATES, Cdp, chromeFlags, sleep, stop, waitFor } from './explore-browser';
 import type { FocusSample, JourneyState } from '../../../web/src/app/journey-script';
+import { chooseView } from './record-view';
+import type { RecordView } from './record-view';
 
 const FFMPEG = process.env['FFMPEG_BIN'] ?? '/opt/homebrew/bin/ffmpeg';
 
-interface Args {
+interface Args extends RecordView {
   readonly url: string;
   readonly journey: string;
   readonly out: string;
-  readonly width: number;
-  readonly height: number;
-  readonly scale: number;
   readonly fps: number;
   readonly timeoutMs: number;
 }
 
 function usage(message: string): never {
-  process.stderr.write(`record: ${message}\nusage: pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--scale 2] [--fps 60] [--timeout <seconds>]\n`);
+  process.stderr.write(`record: ${message}\nusage: pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--css 1280x720] [--scale 1.5] [--legacy] [--fps 60] [--timeout <seconds>]\n`);
   process.exit(2);
 }
 
@@ -48,7 +51,11 @@ function parseArgs(argv: readonly string[]): Args {
     if (arg === '--') continue;
     if (!arg.startsWith('--')) usage(`unexpected ${arg}`);
     const name = arg.slice(2);
-    if (!['url', 'journey', 'out', 'size', 'scale', 'fps', 'timeout'].includes(name)) usage(`unknown flag ${arg}`);
+    if (name === 'legacy') {
+      flags.set(name, 'true');
+      continue;
+    }
+    if (!['url', 'journey', 'out', 'size', 'css', 'scale', 'fps', 'timeout'].includes(name)) usage(`unknown flag ${arg}`);
     const value = argv[i + 1];
     if (value === undefined) usage(`--${name} needs a value`);
     flags.set(name, value);
@@ -58,16 +65,14 @@ function parseArgs(argv: readonly string[]): Args {
   const journey = flags.get('journey');
   const out = flags.get('out');
   if (url === undefined || journey === undefined || out === undefined) usage('--url, --journey and --out are needed');
-  const size = /^(\d{3,5})x(\d{3,5})$/.exec(flags.get('size') ?? '1920x1080');
-  if (size === null) usage('--size is like 1920x1080');
+  const view = chooseView({ ...(flags.has('size') ? { size: flags.get('size') as string } : {}), ...(flags.has('css') ? { css: flags.get('css') as string } : {}), ...(flags.has('scale') ? { scale: flags.get('scale') as string } : {}), legacy: flags.has('legacy') });
+  if (typeof view === 'string') usage(view);
   if (!/^[\w-]{1,40}$/.test(journey)) usage('--journey is a name like car');
   return {
     url: url.replace(/\/+$/, ''),
     journey,
     out: resolve(out),
-    width: Number(size[1]),
-    height: Number(size[2]),
-    scale: Number(flags.get('scale') ?? 2),
+    ...view,
     fps: Number(flags.get('fps') ?? 60),
     timeoutMs: Number(flags.get('timeout') ?? 1200) * 1000,
   };
@@ -102,7 +107,7 @@ async function main(): Promise<void> {
   try {
     child = spawnTracked(
       chrome,
-      [...chromeFlags(), '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--window-size=${args.width},${args.height}`, `--remote-debugging-port=${port}`, `--user-data-dir=${join(scratch, 'profile')}`, 'about:blank'],
+      [...chromeFlags(), '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--window-size=${args.cssWidth},${args.cssHeight}`, `--remote-debugging-port=${port}`, `--user-data-dir=${join(scratch, 'profile')}`, 'about:blank'],
       undefined,
       { quiet: true },
     );
@@ -124,7 +129,7 @@ async function main(): Promise<void> {
     };
     await send('Page.enable');
     await send('Runtime.enable');
-    await send('Emulation.setDeviceMetricsOverride', { width: args.width, height: args.height, deviceScaleFactor: args.scale, mobile: false });
+    await send('Emulation.setDeviceMetricsOverride', { width: args.cssWidth, height: args.cssHeight, deviceScaleFactor: args.scale, mobile: false });
     const consoleErrors: string[] = [];
 
     const frameDir = join(scratch, 'frames');
@@ -144,7 +149,7 @@ async function main(): Promise<void> {
     });
 
     await send('Page.startScreencast', { format: 'jpeg', quality: 95, maxWidth: args.width, maxHeight: args.height, everyNthFrame: 1 });
-    process.stdout.write(`recording ${args.url}/?journey=${args.journey} at ${args.width}x${args.height} (rendered at ${args.scale}x)\n`);
+    process.stdout.write(`recording ${args.url}/?journey=${args.journey} as ${args.width}x${args.height}, laid out in ${args.cssWidth}x${args.cssHeight} CSS pixels and rendered at ${args.scale}x\n`);
     await send('Page.navigate', { url: `${args.url}/?journey=${args.journey}` });
 
     const began = Date.now();
@@ -159,7 +164,11 @@ async function main(): Promise<void> {
     }
     // a moment of the finished stage, then stop
     await sleep(2000);
-    const regions = await evaluate<Record<string, { x: number; y: number; w: number; h: number } | null>>(`(() => { const box = (el) => { if (!el || el.hidden) return null; const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }; const stage = document.getElementById('stage'); const panel = document.querySelector('.lang'); return { panel: box(panel), stage: box(stage), input: box(document.querySelector('.prompt')), modelLabel: box(document.querySelector('.model-label')), rowPitch: (() => { const rows = document.querySelectorAll('.lang__row'); return rows.length > 1 ? { x: 0, y: 0, w: 0, h: rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top } : null; })() }; })()`);
+    const inPage = await evaluate<Record<string, { x: number; y: number; w: number; h: number } | null>>(`(() => { const box = (el) => { if (!el || el.hidden) return null; const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }; const stage = document.getElementById('stage'); const panel = document.querySelector('.lang'); return { panel: box(panel), stage: box(stage), input: box(document.querySelector('.prompt')), modelLabel: box(document.querySelector('.model-label')), rowPitch: (() => { const rows = document.querySelectorAll('.lang__row'); return rows.length > 1 ? { x: 0, y: 0, w: 0, h: rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top } : null; })() }; })()`);
+    // the page measures in CSS pixels; the film is `zoom` times as many: everything handed on is in pixels of the film
+    const film = (box: { x: number; y: number; w: number; h: number } | null): { x: number; y: number; w: number; h: number } | null =>
+      box === null ? null : { x: Math.round(box.x * args.zoom * 10) / 10, y: Math.round(box.y * args.zoom * 10) / 10, w: Math.round(box.w * args.zoom * 10) / 10, h: Math.round(box.h * args.zoom * 10) / 10 };
+    const regions = Object.fromEntries(Object.entries(inPage).map(([name, box]) => [name, film(box)]));
     const wordmark = await evaluate<boolean>('/conduit/i.test(document.body.innerText)');
     if (wordmark) process.stdout.write('  note: the word "Conduit" appears in the page text\n');
     const journey = await evaluate<JourneyState>('JSON.parse(JSON.stringify(window.__journey))');
@@ -186,8 +195,8 @@ async function main(): Promise<void> {
 
     // ---- what the page said, on the film's clock
     const { focus, ...rest } = journey;
-    const track = focus.map((sample: FocusSample) => ({ t: Math.round(((sample.at / 1000 - first) * 1000)) / 1000, id: sample.id, kind: sample.kind, element: sample.element, row: sample.row }));
-    await writeFile(join(args.out, 'focus.json'), JSON.stringify({ version: 1, clock: `seconds since the first frame of ${args.journey}.mp4`, viewport: { w: args.width, h: args.height, dpr: 1, renderScale: args.scale }, regions, samples: track }));
+    const track = focus.map((sample: FocusSample) => ({ t: Math.round(((sample.at / 1000 - first) * 1000)) / 1000, id: sample.id, kind: sample.kind, element: film(sample.element), row: film(sample.row) }));
+    await writeFile(join(args.out, 'focus.json'), JSON.stringify({ version: 1, clock: `seconds since the first frame of ${args.journey}.mp4`, viewport: { w: args.width, h: args.height, dpr: 1, renderScale: args.scale, css: { w: args.cssWidth, h: args.cssHeight }, zoom: args.zoom }, regions, samples: track }));
     // named steps, on the film's clock: `car.send`, `brakes.tap`, `stop.rest`, `dragSpeed.dragStart`...
     const secs = (stamp: { readonly at: number } | null): number | null => (stamp === null ? null : Math.round((stamp.at / 1000 - first) * 1000) / 1000);
     const events: Record<string, Record<string, number | null>> = {};
@@ -200,14 +209,16 @@ async function main(): Promise<void> {
         send: secs(step.sent ?? step.tapAt),
         tap: secs(step.tapAt),
         firstLine: secs(step.firstLine),
+        firstLineEvent: secs(step.firstLineEvent),
         turnEnded: secs(step.turnEnded),
         rest: secs(after?.rest ?? null),
+        restSettled: secs(after?.restSettled ?? null),
         dragStart: secs(step.dragStart),
         dragEnd: secs(step.dragEnd),
         back: step.op === 'back' ? secs(step.tapAt) : null,
       };
     });
-    await writeFile(join(args.out, 'journey.json'), JSON.stringify({ ...rest, events, regions, video: { file: `${args.journey}.mp4`, width: args.width, height: args.height, fps: args.fps, firstFrameAt: Math.round(first * 1000), durationSeconds: Math.round((lastFrame.t - first) * 1000) / 1000, framesReceived: frames.length } }, null, 1));
+    await writeFile(join(args.out, 'journey.json'), JSON.stringify({ ...rest, events, regions, video: { file: `${args.journey}.mp4`, width: args.width, height: args.height, css: { width: args.cssWidth, height: args.cssHeight }, zoom: args.zoom, renderScale: args.scale, fps: args.fps, firstFrameAt: Math.round(first * 1000), durationSeconds: Math.round((lastFrame.t - first) * 1000) / 1000, framesReceived: frames.length } }, null, 1));
 
     // ---- the pacing
     const seconds = Math.ceil(lastFrame.t - first);
