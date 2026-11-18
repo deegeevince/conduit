@@ -73,6 +73,7 @@ import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
 import { livePages, painterCaps, showcaseCase, showcaseCategory, tableResults } from './showcase-check';
 import { mathsGroup } from './math-check';
+import { motionGroup } from './motion-check';
 import { checkGlyphs, checkInk, checkListings, checkSlideWords, checkTakeover, flowsGroup, footprintJudge, photoGroup, sceneFactsOf, streamBrainCheck, streamFixtureCheck, testPattern } from './real-check';
 import type { Footprint } from './real-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
@@ -635,6 +636,7 @@ class Screen {
       const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(source)})).then(() => null, (e) => String(e && e.message || e))`);
       // the script is one long turn that plays in real time (a minute and a half of the clock now, and a busy machine plays it slower): it is given as long as four demos
       results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.max(Math.round(this.args.timeoutMs * 1.5), 240_000)), began));
+      Screen.add(results, 'hard-layout-work', await this.layoutWork(tab, source), 'each diagram was laid out for its own lines: the lines written after it cost it no layout');
       const starts = await this.sceneStarts(tab);
       if (starts.length !== ids.length) results.push({ turn: 0, check: 'scenes', verdict: 'FAIL', detail: `the script has ${ids.length} scenes but the turn has ${starts.length}` });
       const last = ids.length - 1;
@@ -647,6 +649,32 @@ class Screen {
     } finally {
       await tab.close();
     }
+  }
+
+  /**
+   * fb-065: a diagram is laid out for the lines that make it (each part that arrives changes it), and not again for every line the turn writes after it. The painter counts
+   * the layouts it really ran by structure (`window.__layoutWork`, the rest answered from memory); a structure whose scene writes `node` and `link` lines may have run
+   * three layouts for each of its own lines, no more. (The flowchart of hard.series, with 170 lines written after it, was laid out 176 times for its 20 lines, and the page
+   * stood still for 45 s while the turn arrived at a phone's width: the check's rest limit was spent before the script began to play.)
+   */
+  private async layoutWork(tab: Tab, source: string): Promise<string[]> {
+    const work = await tab.eval<{ runs: Record<string, number>; remembered: number } | null>('window.__layoutWork || null');
+    if (work === null) return ['the page does not count its layouts (window.__layoutWork)'];
+    const scenes = source.split(/^scene\b/m).slice(1);
+    const problems: string[] = [];
+    let judged = 0;
+    for (const [key, runs] of Object.entries(work.runs)) {
+      const id = key.split('@')[0] as string;
+      const scene = scenes.find((part) => new RegExp(`^\\w+ ${id}\\b`, 'm').test(part));
+      if (scene === undefined) continue;
+      const own = scene.split('\n').filter((line) => /^(node|link)\s/.test(line)).length;
+      if (own === 0) continue;
+      judged += 1;
+      const most = 3 * (own + 2);
+      if (runs > most) problems.push(`${id} was laid out ${runs} times for its ${own + 1} lines (at most ${most}): the lines after it laid it out again`);
+    }
+    if (judged === 0) problems.push('no diagram of the script was found among the layouts counted');
+    return problems;
   }
 
   /** what each scene of hard.series says its own bug would break */
@@ -1314,6 +1342,14 @@ class Screen {
         const sent = tab.posted.length;
         const verdict = (): Promise<string> => tab.eval<string>(`(window.__stage.controls().find((c) => c.id === ${JSON.stringify(scene.id)}) || { askState: { verdict: 'none' } }).askState.verdict`);
         await checkTakeover(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail));
+        // The picture is taken here, with the stage at rest and the question on it, and judged with the list of what is on stage read the moment after. It used to be taken last,
+        // after the right answer: that answer is sent to the brain, whose reply opens a turn that clears the stage, and on a machine under load the picture came
+        // while that turn was opening (a bare ground, the status "Playing…") and the list a moment later held the reply's first line: "nothing drawn in its box" for a line that was
+        // drawn a frame later. A picture and the list it is judged against are one frame only when nothing is on its way.
+        const picture = await tab.shot();
+        const file = `${this.screen.name}-${name}.png`;
+        await writeFile(join(this.dir, file), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
+        await checkInk(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail), picture, (await tab.call<Answer>('answer')).live, tab.dpr);
         const words = norm(scene.question.replace(/_{2,}|□/g, ' '));
         const said = norm((await tab.eval<string>(`window.__stage.elements().map((e) => e.text).concat(window.__stage.controls().map((c) => c.label)).join(' ')`)).replaceAll('…', ' '));
         if (!said.includes(words.split(' ').slice(0, 6).join(' '))) problems.push(`the question is not on the canvas: "${scene.question}"`);
@@ -1332,10 +1368,6 @@ class Screen {
           }
           if (right !== 'right' && !tab.posted.slice(sent).some((turn) => /right/.test(turn.text ?? ''))) problems.push(`the right answer in the blank was marked "${right}"`);
         }
-        const picture = await tab.shot();
-        const file = `${this.screen.name}-${name}.png`;
-        await writeFile(join(this.dir, file), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
-        await checkInk(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail), picture, (await tab.call<Answer>('answer')).live, tab.dpr);
         Screen.add(results, 'problem', problems, 'the question is on the canvas with a blank, nothing takes the screen, a wrong answer is marked wrong and the right one right');
         const scenery: Scene = { name, seconds: (Date.now() - began) / 1000, picture: file, results };
         this.scenes.push(scenery);
@@ -1911,6 +1943,15 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     run: async (_servers, out) => {
       out.lines.push('\nmaths (820x971, 390x844, 1280x720; input at 820x971 dpr 2 and 390x844 dpr 3, on a server of its own)');
       checkLines(out, await mathsGroup(plain, join(args.out, 'maths'), args.timeoutMs));
+    },
+  });
+  units.push({
+    name: 'motion',
+    needs: 'none',
+    weight: 8,
+    run: async (_servers, out) => {
+      out.lines.push('\nmotion (PLAN-motion step 2, bench half: centres read from the frames at chosen T, to 1e-6; no browser)');
+      checkLines(out, await motionGroup(plain));
     },
   });
   units.push({
