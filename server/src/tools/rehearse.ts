@@ -1,14 +1,13 @@
-// pnpm rehearse: the iPad demo, end to end, on a real brain and the real handwriting reader, in headless Chrome at 820x971 (dpr 2) with a finger and a pen.
+// pnpm rehearse: the iPad demo, end to end, on a real brain, in headless Chrome at 820x971 (dpr 2) with a finger and a pen.
 //
-//   pnpm rehearse --out <dir> --thinking on|off [--effort low|medium|high (high)] [--photo <jpg>] [--style pause|burst] [--fix clear|strike] [--fake] [--case <file>]
+//   pnpm rehearse --out <dir> --thinking on|off [--effort low|medium|high (high)] [--photo <jpg>] [--fake] [--case <file>]
 //
 // The flow the owner records: hold the maths skill, add a photo of a word problem, ask for help; Claude draws it up (callouts on the photo's numbers, then the
-// working as a `math` column with empty boxes); the pen writes the digits (one deliberately wrong), Check crosses the wrong one, Hint says a step, the pen
-// fixes it, Check ticks; the result goes to Claude, which answers with a next step. Every step is timed and photographed; what the page and the brain
-// did is written to <out>/run.json and printed. The worksheet photo is made here (`rehearse-photo.ts`), never a real child's.
+// working as a `math` column with empty boxes); the pen writes the digits (one deliberately wrong) in the boxes, and Send puts the picture of the sum with the writing on
+// it up as one drawing turn; Claude answers with what is next. Every step is timed and photographed; what the page and the brain did is written to <out>/run.json and
+// printed. The worksheet photo is made here (`rehearse-photo.ts`), never a real child's.
 //
-// A live run costs model calls (the brain's turns, the critic, one handwriting read for each pause of the pen): `--fake` is the free dry run (BRAIN=replay with
-// `--case`, INK_READER=fake) to prove the driver itself.
+// A live run costs model calls (the brain's turns and the critic): `--fake` is the free dry run (BRAIN=replay with `--case`) to prove the driver itself.
 
 import type { ChildProcess } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -27,8 +26,6 @@ interface Args {
   readonly out: string;
   readonly thinking: 'on' | 'off';
   readonly photo: string | null;
-  readonly style: 'pause' | 'burst';
-  readonly fix: 'clear' | 'strike';
   readonly fake: boolean;
   readonly caseFile: string | null;
   readonly critic: 'on' | 'off';
@@ -40,13 +37,11 @@ interface Args {
 function parseArgs(argv: readonly string[]): Args {
   const get = (name: string): string | null => (argv.includes(`--${name}`) ? (argv[argv.indexOf(`--${name}`) + 1] ?? null) : null);
   const out = get('out');
-  if (out === null) throw new Error('usage: pnpm rehearse --out <dir> [--thinking on|off] [--photo <jpg>] [--style pause|burst] [--fix clear|strike] [--fake] [--case <file>]');
+  if (out === null) throw new Error('usage: pnpm rehearse --out <dir> [--thinking on|off] [--photo <jpg>] [--fake] [--case <file>]');
   return {
     out: resolve(out),
     thinking: get('thinking') === 'off' ? 'off' : 'on',
     photo: get('photo'),
-    style: get('style') === 'burst' ? 'burst' : 'pause',
-    fix: get('fix') === 'strike' ? 'strike' : 'clear',
     fake: argv.includes('--fake'),
     caseFile: get('case'),
     critic: get('critic') === 'off' ? 'off' : 'on',
@@ -57,7 +52,7 @@ function parseArgs(argv: readonly string[]): Args {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Handwriting: a few strokes for each digit, as a child might write it, so that the real reader has something real to read
+// Handwriting: a few strokes for each digit, as a child might write it, so that the model has something real to read
 
 type Unit = readonly (readonly [number, number])[];
 const DIGIT_STROKES: Readonly<Record<string, readonly Unit[]>> = {
@@ -111,8 +106,8 @@ async function startLive(args: Args, skills: string): Promise<Live> {
   await mkdir(dataDir, { recursive: true });
   const port = await claimPort('the rehearsal server');
   const live: Record<string, string> = args.fake
-    ? { BRAIN: 'replay', REPLAY_CPS: '600', INK_READER: 'fake', ...(args.caseFile === null ? {} : { REPLAY_CASE: args.caseFile }) }
-    : { BRAIN: 'claude-cli', CLAUDE_MODEL: 'opus', BRAIN_EFFORT: args.effort, BRAIN_THINKING: args.thinking, INK_READER: 'claude', CRITIC: args.critic, CRITIC_MODEL: 'fable', CRITIC_EFFORT: 'high', CRITIC_LOOK_MS: '150000' };
+    ? { BRAIN: 'replay', REPLAY_CPS: '600', ...(args.caseFile === null ? {} : { REPLAY_CASE: args.caseFile }) }
+    : { BRAIN: 'claude-cli', CLAUDE_MODEL: 'opus', BRAIN_EFFORT: args.effort, BRAIN_THINKING: args.thinking, CRITIC: args.critic, CRITIC_MODEL: 'fable', CRITIC_EFFORT: 'high', CRITIC_LOOK_MS: '150000' };
   let log = '';
   const child: ChildProcess = spawnTracked(process.execPath, ['--import', 'tsx', 'src/main.ts'], undefined, {
     cwd: join(root, 'server'),
@@ -211,7 +206,6 @@ interface Sample {
 }
 
 const overlap = (a: Box, b: Box): number => Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
-const centreOf = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
 
 async function main(): Promise<void> {
@@ -362,11 +356,10 @@ async function main(): Promise<void> {
     if (block === undefined) {
       note('column', 'FAIL', 'no written method with boxes is on the stage');
     } else {
-      const filled = block.cells.filter((cell) => cell.value !== '' || cell.read !== '');
+      const filled = block.cells.filter((cell) => cell.value !== '');
       note('blanks', filled.length === 0 ? 'PASS' : 'FAIL', `${block.cells.length} boxes (${block.cells.filter((c) => !c.optional).length} asked, ${block.cells.filter((c) => c.optional).length} optional: ${block.cells.map((c) => `${c.part}${c.optional ? '?' : ''}`).join(' ')}); ${filled.length === 0 ? 'every one empty' : `already holding digits: ${filled.map((c) => `${c.part}=${c.value}`).join(' ')}`}`);
       const tiny = block.cells.filter((c) => c.box.width < 44 || c.box.height < 44);
       note('blanks', tiny.length === 0 ? 'PASS' : 'FAIL', tiny.length === 0 ? `every box is at least 44 px (${Math.round(Math.min(...block.cells.map((c) => c.box.width)))} x ${Math.round(Math.min(...block.cells.map((c) => c.box.height)))} the smallest)` : `boxes under 44 px: ${tiny.map((c) => c.part).join(' ')}`);
-      note('buttons', block.buttons.length >= 2 ? 'PASS' : 'FAIL', `Check/Hint buttons: ${block.buttons.map((b) => b.label).join(', ') || 'none'}`);
     }
     // the answer in no words
     const everything = await tab.eval<string>(`[document.body.innerText, ...[...document.querySelectorAll('[aria-label],[title],[alt]')].map((n) => n.getAttribute('aria-label') || n.getAttribute('title') || n.getAttribute('alt'))].join('\\n')`);
@@ -416,7 +409,7 @@ async function main(): Promise<void> {
 
     if (args.firstOnly) throw new StopRun();
 
-    // ---- 5. the pen
+    // ---- 5. the pen: the person writes in the boxes, as on paper. Nothing reads it, nothing marks it
     if (block === undefined) {
       note('stop', 'FAIL', 'no written method to write in: the rehearsal stops after the first answer');
       watching = false;
@@ -429,179 +422,57 @@ async function main(): Promise<void> {
       const cell = await cellOf(part);
       if (cell === null) throw new Error(`no box ${part}`);
       const origin = await hands.origin();
-      if (args.fake) {
-        // the free rig's reader counts strokes: a digit is that many short ticks
-        for (let tick = 0; tick < Number(digit); tick += 1) {
-          const x = cell.box.x + cell.box.width * (0.2 + (0.6 * tick) / Math.max(1, Number(digit) - 1 || 1));
-          await hands.pen(along([[0.5, 0.2], [0.5, 0.8]], { ...cell.box, x: x - cell.box.width * 0.5 }, tick, 0.75).map((p) => ({ x: p.x + origin.x, y: p.y + origin.y })));
-        }
-        return;
-      }
       for (const [at, keys] of (DIGIT_STROKES[digit] ?? []).entries()) {
         const path = along(keys, cell.box, seed + at + Number(digit), scale).map((p) => ({ x: p.x + origin.x, y: p.y + origin.y }));
         await hands.pen(path);
       }
     };
-    const readyAfter = async (parts: readonly string[], since: number): Promise<number> => {
-      await waitFor(`the read of ${parts.join(', ')}`, 120_000, async () => {
-        const cells = await Promise.all(parts.map(cellOf));
-        return cells.every((cell) => cell !== null && cell.read !== '' && !cell.reading) ? true : null;
-      });
-      return Date.now() - since;
-    };
-    const reads = (): Promise<{ cells: number; uploadMs: number; readMs: number; totalMs: number; ok: boolean }[]> => tab.eval('window.__mathReads || []');
     const grid = block.cells.map((c) => c.part);
     const asked = block.cells.filter((c) => !c.optional).map((c) => c.part);
     say(`boxes: ${grid.join(' ')}; asked: ${asked.join(' ')}`);
     const answerCells = ['ans-ones', 'ans-tens', 'ans-hundreds'].filter((part) => grid.includes(part));
     if (answerCells.length !== 3) note('pen', 'FAIL', `expected ans-ones, ans-tens, ans-hundreds among the boxes, got ${grid.join(' ')}`);
     const plan: [string, string][] = [['ans-ones', '5'], ['ans-tens', args.wrong], ['ans-hundreds', '2']];
-    const readTimes: Record<string, number> = {};
     await picture('before-writing');
-    if (args.style === 'pause') {
-      for (const [part, digit] of plan) {
-        const lifted = Date.now();
-        await writes(part, digit);
-        const took = await readyAfter([part], lifted);
-        readTimes[part] = took;
-        const cell = await cellOf(part);
-        note('pen', cell?.read === digit ? 'PASS' : 'FAIL', `wrote a ${digit} in ${part}: the reader said "${cell?.read}" ${seconds(took)} after the pen lifted (incl. the 0.8 s wait)`);
-        await sleep(900);
-      }
-    } else {
-      const lifted0 = Date.now();
-      for (const [part, digit] of plan) await writes(part, digit);
-      const lifted = Date.now();
-      const took = await readyAfter(plan.map(([part]) => part), lifted);
-      readTimes['all-three'] = took;
-      const got = await Promise.all(plan.map(async ([part]) => (await cellOf(part))?.read ?? ''));
-      note('pen', got.join('') === plan.map(([, d]) => d).join('') ? 'PASS' : 'FAIL', `wrote ${plan.map(([, d]) => d).join('')} in three boxes in ${seconds(lifted - lifted0)}: the reader said ${got.join(',')} ${seconds(took)} after the last lift`);
-    }
-    const readLog = await reads();
-    note('reads', readLog.every((r) => r.ok) ? 'PASS' : 'FAIL', `${readLog.length} read request(s): ${readLog.map((r) => `${r.cells} box${r.cells === 1 ? '' : 'es'} ${seconds(r.totalMs)} (upload ${r.uploadMs} ms, read ${r.readMs} ms)`).join('; ')}`);
-    timings['reads'] = readLog.reduce((sum, r) => sum + r.totalMs, 0);
+    const wroteAt = Date.now();
+    for (const [part, digit] of plan) await writes(part, digit);
+    timings['writing'] = Date.now() - wroteAt;
+    const inked = await hands.strokes();
+    note('pen', (inked?.strokes.length ?? 0) > 0 ? 'PASS' : 'FAIL', `wrote ${plan.map(([, d]) => d).join('')} in three boxes in ${seconds(timings['writing'] as number)}: ${inked?.strokes.length ?? 0} stroke(s) on the stage`);
+    const reads = await tab.eval<number>('(window.__mathReads || []).length');
+    const buttons = await tab.eval<number>(`[...document.querySelectorAll('button')].filter((b) => /^(check|hint|show me)\\b/i.test((b.textContent || '').trim())).length`);
+    note('no-check', reads === 0 && buttons === 0 ? 'PASS' : 'FAIL', `${reads} handwriting read(s) made, ${buttons} Check/Hint button(s) in the page`);
     await picture('digits-written');
     errorsNow('pen');
 
-    // ---- 6. Check: the wrong box gets a cross
-    const tapButton = async (name: 'check' | 'hint' | 'show', how: 'finger' | 'pen' = 'finger'): Promise<void> => {
-      const b = (await mine!.block(block.id))?.buttons.find((x) => x.name === name);
-      if (b === undefined) throw new Error(`no ${name} button`);
-      const at = await mine!.centre(b.box);
-      if (how === 'finger') await hands.finger([at]);
-      else await hands.pen([at, { x: at.x + 0.5, y: at.y }]);
-      await sleep(300);
-    };
-    await sleep(600);
-    const checkAt = Date.now();
-    await tapButton('check');
-    const afterCheck = await mine.block(block.id);
-    const marks = Object.fromEntries((afterCheck?.cells ?? []).map((c) => [c.part, c.mark]));
-    timings['check-1'] = Date.now() - checkAt;
-    const wrongPart = 'ans-tens';
-    const okMarks = marks['ans-ones'] === 'right' && marks[wrongPart] === 'wrong' && marks['ans-hundreds'] === 'right';
-    note('check', okMarks ? 'PASS' : 'FAIL', `after Check the boxes read ${JSON.stringify(marks)} (verdict ${afterCheck?.verdict})`);
-    await picture('check-wrong');
-    const acts1 = await mine.acts();
-    note('act', acts1.length > 0 ? 'INFO' : 'FAIL', `acts recorded so far: ${JSON.stringify(acts1)}`);
-
-    // ---- 7. Hint
-    await tapButton('hint');
-    const hinted = await mine.block(block.id);
-    const hintText = hinted?.hint ?? '';
-    const lit = hinted?.cells.find((c) => c.lit)?.part ?? 'none';
-    note('hint', hintText !== '' ? 'PASS' : 'FAIL', `Hint lit ${lit} and said: "${hintText}"`);
-    const rightDigit = '2';
-    const hintHolds: string[] = hintText.match(/\d+/g) ?? [];
-    note('hint-digits', hintHolds.includes(rightDigit) && lit === wrongPart ? 'FAIL' : 'INFO', `digits in the hint: ${hintHolds.join(', ') || 'none'} (the box's own answer is ${rightDigit})`);
-    await picture('hint');
-
-    // ---- 8. fix the wrong box
-    const fixAt = Date.now();
-    if (args.fix === 'clear') {
-      const cross = (await cellOf(wrongPart))?.clear ?? null;
-      if (cross === null) note('fix', 'FAIL', `the wrong box shows no ✕ to take the ink off`);
-      else {
-        await hands.finger([await mine.centre(cross)]);
-        await sleep(400);
-      }
-      await writes(wrongPart, '2', 1, 11);
-    } else {
-      // strike the digit through and write the right one beside it, small, in the same box
-      const cell = await cellOf(wrongPart);
-      if (cell !== null) {
-        const origin = await hands.origin();
-        const strike = [{ x: cell.box.x + cell.box.width * 0.1, y: cell.box.y + cell.box.height * 0.75 }, { x: cell.box.x + cell.box.width * 0.9, y: cell.box.y + cell.box.height * 0.25 }].map((p) => ({ x: p.x + origin.x, y: p.y + origin.y }));
-        await hands.pen(strike);
-      }
-      await writes(wrongPart, '2', 0.55, 13);
-    }
-    const fixed = await readyAfter([wrongPart], fixAt);
-    const fixedCell = await cellOf(wrongPart);
-    timings['fix-read'] = fixed;
-    note('fix', fixedCell?.read === '2' ? 'PASS' : 'FAIL', `rewrote the tens as 2 (${args.fix}): the reader said "${fixedCell?.read}" ${seconds(fixed)} after the pen began`);
-    await picture('fixed');
-
-    // ---- 9. Check again: the Check that finishes the sum is also what tells Claude
+    // ---- 6. Send: the picture of the stage with the writing on it goes up as one drawing turn, and Claude decides what is next
     await sleep(700);
-    const postedAtCheck = tab.posted.length;
-    const elementsAtCheck = samples.at(-1)?.elements ?? 0;
-    const eventsAtCheck = (await tab.eval<unknown[]>('window.__stage.events()')).length;
-    const checkTwoAt = Date.now();
-    await tapButton('check');
-    const final = await mine.block(block.id);
-    const finalMarks = Object.fromEntries((final?.cells ?? []).map((c) => [c.part, c.mark]));
-    const allRight = (final?.cells ?? []).filter((c) => !c.optional).every((c) => c.mark === 'right') && final?.verdict === 'right';
-    note('check-again', allRight ? 'PASS' : 'FAIL', `after Check again: ${JSON.stringify(finalMarks)}, verdict ${final?.verdict}`);
-    await picture('check-right');
-    const acts2 = await mine.acts();
-    note('act', 'INFO', `acts so far: ${JSON.stringify(acts2)}`);
-
-    // ---- 10. the result goes to Claude
-    const turnsBefore = postedAtCheck;
-    const sentTurn = await waitFor('the act turn', 6000, async () => (tab.posted.length > postedAtCheck ? (tab.posted[tab.posted.length - 1] ?? null) : null)).catch(() => null);
-    const autoSent = sentTurn !== null;
-    note('send', autoSent ? 'PASS' : 'FAIL', autoSent ? `finishing the sum sent a turn by itself: ${sentTurn.kind} "${sentTurn.text}" (${eventsAtCheck} events were held for it)` : `nothing was sent by finishing the sum (${eventsAtCheck} events held for the next turn)`);
-    let replied = autoSent;
-    const afterAt = autoSent ? checkTwoAt : Date.now();
-    if (!autoSent) {
-      const choices = (await elementsNow()).filter((e) => e.tappable && e.text.trim() !== '');
-      say(`tappable on the stage: ${choices.map((c) => `"${c.text.trim().slice(0, 40)}"`).join(', ') || 'nothing'}`);
-      const pick = choices.find((c) => /got it|done|finished|next|check|ready|yes/i.test(c.text)) ?? choices[0];
-      if (pick !== undefined) {
-        const mid = centreOf(pick.box);
-        const origin = await hands.origin();
-        await hands.finger([{ x: origin.x + mid.x, y: origin.y + mid.y }]);
-        note('send', 'INFO', `tapped the choice "${pick.text.trim().slice(0, 60)}"`);
-      } else {
-        await sendWords("I've done it");
-        note('send', 'INFO', 'no choice was offered: typed "I\'ve done it"');
-      }
-      replied = true;
+    const postedAtSend = tab.posted.length;
+    const eventsAtSend = samples.at(-1)?.elements ?? 0;
+    const sendButton = await tab.call<{ x: number; y: number; w: number; h: number; hidden?: boolean } | null>('rect', '.ink-btn--send');
+    if (sendButton === null || sendButton.hidden === true) throw new Error('the ink bar shows no Send with the writing on the stage');
+    const sendAtMs = Date.now();
+    sentAt = sendAtMs;
+    await tab.tap(sendButton.x + sendButton.w / 2, sendButton.y + sendButton.h / 2);
+    const sentTurn = await waitFor('the drawing turn', 20_000, async () => (tab.posted.length > postedAtSend ? (tab.posted[tab.posted.length - 1] ?? null) : null)).catch(() => null);
+    if (sentTurn === null) note('send', 'FAIL', 'Send posted no turn');
+    else {
+      const marks = (JSON.parse(sentTurn.body) as { input?: { marks?: { strokes?: unknown[]; on?: { element?: string } } } }).input?.marks;
+      note('send', sentTurn.kind === 'prompt' && marks?.on?.element === block.id ? 'PASS' : 'FAIL', `Send posted a ${sentTurn.kind} turn "${sentTurn.text}" with ${marks?.strokes?.length ?? 0} stroke(s) drawn on element ${marks?.on?.element ?? 'none'} (the sum is ${block.id})`);
+      await writeFile(join(args.out, 'turn-2-request.json'), sentTurn.body);
     }
-    if (replied) {
-      const base2 = elementsAtCheck;
-      const turnSeen = await waitFor('the second turn', 60_000, async () => (tab.posted.length > turnsBefore ? (tab.posted[tab.posted.length - 1] ?? null) : null)).catch(() => null);
-      timings['reply-sent'] = Date.now() - afterAt;
-      if (turnSeen !== null) say(`turn posted: ${turnSeen.kind} "${turnSeen.text}"`);
-      const body = turnSeen === null ? '' : turnSeen.body;
-      await writeFile(join(args.out, 'turn-2-request.json'), body);
-      const second = await mine.conv.rest(true, true, 300_000);
-      timings['reply-rest'] = Date.now() - afterAt;
-      const firstReply = samples.find((s) => s.t >= afterAt - t0 && s.elements !== base2) ?? null;
-      timings['reply-first-line'] = firstReply === null ? -1 : firstReply.t - (afterAt - t0);
-      await picture('reply');
-      const reply = await tab.call<{ script: string }>('answer');
-      await writeFile(join(args.out, 'answer-2.script.txt'), `${reply.script}\n`);
-      note('reply', second === '' ? 'PASS' : 'FAIL', `${second === '' ? 'Claude answered' : second}: first thing ${firstReply === null ? 'unseen' : seconds(timings['reply-first-line'] as number)} after the act, at rest ${seconds(timings['reply-rest'] as number)}`);
-      const text = (await elementsNow()).map((e) => e.text).join(' | ');
-      note('reply-words', 'INFO', text.slice(0, 600));
-      const asksNext = /\?/.test(text) || (await tab.eval<number>(`window.__stage.controls().length`)) > 0 || (await mine.blocks()).length > 1;
-      note('next-question', asksNext ? 'PASS' : 'FAIL', asksNext ? 'the reply carries a question, a control or a new written method' : 'the reply has no question, control or new method on the stage');
-      const leakedNext = [...reply.script.matchAll(/\b225\b/g)];
-      note('reply-sealed', leakedNext.length === 0 ? 'PASS' : 'INFO', leakedNext.length === 0 ? 'the reply does not state 225' : 'the reply states 225 (the sum is done, so this is no spoiler now)');
-      errorsNow('reply');
-    }
+    const second = await mine.conv.rest(true, true, 300_000);
+    timings['reply-rest'] = Date.now() - sendAtMs;
+    const firstReply = samples.find((s) => s.t >= sendAtMs - t0 && s.elements !== eventsAtSend) ?? null;
+    timings['reply-first-line'] = firstReply === null ? -1 : firstReply.t - (sendAtMs - t0);
+    await picture('reply');
+    const reply = await tab.call<{ script: string }>('answer');
+    await writeFile(join(args.out, 'answer-2.script.txt'), `${reply.script}\n`);
+    note('reply', second === '' ? 'PASS' : 'FAIL', `${second === '' ? 'Claude answered' : second}: first thing ${firstReply === null ? 'unseen' : seconds(timings['reply-first-line'] as number)} after Send, at rest ${seconds(timings['reply-rest'] as number)}`);
+    const text = (await elementsNow()).map((e) => e.text).join(' | ');
+    note('reply-words', 'INFO', text.slice(0, 600));
+    note('reply-script', 'INFO', reply.script.split('\n').slice(0, 12).join(' // ').slice(0, 800));
+    errorsNow('reply');
 
     // ---- turns that happened without being asked for (a critic repair, a fill ahead), seen by the watcher
     const turnsSeen = [...new Set(samples.map((s) => s.turn).filter((t): t is string => t !== null))];

@@ -6,21 +6,20 @@
 //   fill       `fill` writes its digits into the blanks, by place
 //   rule       the rule spans every column of the sum
 //   clear      no two cells overlap, and the block is on the screen
-//   hint       the longest hint of a sum (an exchange) stands under the buttons, clear of them
+//   no marks   nothing of the app's own checking is painted: no Check, Hint or Show me, no tick, cross or ring, no line of hint, no digit read from the pen (owner: write, then send)
 //
 // The page's half is `web/src/bench/math-bench.ts` (the real painter, a renderer that keeps the last frame). Run by `pnpm check` and standalone (`tsx math-check.ts`).
 //
 // The input half (PLAN-maths M3, M4) is worked in a real headless Chrome with a real finger, a real pen and real keys, at 820x971 (dpr 2) and 390x844 (dpr 3), on a server
-// this group starts itself (BRAIN=replay, INK_READER=fake: no model):
+// this group starts itself (BRAIN=replay: no model):
 //
-//   keys    a finger tap focuses a cell inside the gesture; `2` moves to the carry then the tens; Backspace, Tab and the arrows walk the sum; Enter marks it;
-//           under a stubbed short visual viewport the active cell stays in view
-//   hint    Hint lights the next cell and says its step without its digit; Show me is offered only after a wrong try and fills one cell, marked as shown
-//   fill    `fill m1 | 72` and `fill m1.ans-ones | 2` put digits in the cells, marked
-//   pen     (M4) a pen stroke with Draw closed is one stroke owned by its cell; across two cells it goes to the larger share; a finger drag leaves no ink; the fake reader's
-//           digit shows and Check marks it; a misread is corrected by a tap and a typed digit
-//   mixed   pen in one cell and keys in the next
-//   live    one real handwriting read on a server with the Claude brain, to time it (`--live`, and in `pnpm check` only when MATHS_LIVE=1)
+//   keys    a finger tap focuses a cell inside the gesture; `2` moves to the carry then the tens; Backspace, Tab and the arrows walk the sum; Enter puts the keyboard away and
+//           marks nothing; under a stubbed short visual viewport the active cell stays in view
+//   fill    `fill m1 | 72` and `fill m1.ans-ones | 2` put digits in the cells, unmarked
+//   pen     (M4) a pen stroke with Draw closed is one stroke owned by its cell; across two cells it goes to the larger share; a finger drag leaves no ink; nothing is read; a
+//           typed digit over the ink dims it, and the ✕ takes it off
+//   send    fb-104 (owner: write, then send). Pen-write in an answer box and press Send: one drawing turn goes up, on the sum's id, with every stroke; no reader request is
+//           made, and no Check or Hint is in the page or the painter
 
 import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -73,7 +72,7 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
     }
     blocks += 1;
     const worked = /\bworked\b/.test(one.lines[0] ?? '');
-    const typedBy = one.lines.some((line) => line.startsWith('type ') || /^press \S+ check$/.test(line));
+    const typedBy = one.lines.some((line) => line.startsWith('type '));
     const filled = one.lines.some((line) => line.startsWith('fill '));
     const isGrid = method === 'column' || method === 'times' || method === 'split' || method === 'bond';
     // 1. place: every digit cell of one place, in any row, stands on one x (carries and exchanges are set smaller, in the same column)
@@ -110,14 +109,10 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
       const ones = elements.find((e) => partOf(e.key) === 'c:ans-ones')?.text;
       if (tens !== '2' || ones !== '4') problems.push(`${where}: fill 24 put "${tens}" and "${ones}" in the tens and ones`);
     }
-    // 4a. hint (fb-096): the words of a hint, longest of the sum (an exchange takes several lines), stand under the buttons and clear of them
-    if (one.lines.some((text) => /^press \S+ hint$/.test(text))) {
-      const hint = elements.find((e) => partOf(e.key) === 'hint');
-      const bottoms = figures.filter((f) => partOf(f.key).startsWith('btn:')).map((f) => f.y1);
-      if (hint === undefined) problems.push(`${where}: the hint said no words`);
-      else if (bottoms.length === 0) problems.push(`${where}: no buttons to say a hint under`);
-      else if (hint.y - hint.height / 2 < Math.max(...bottoms) - 0.5) problems.push(`${where}: the hint's words begin ${(Math.max(...bottoms) - (hint.y - hint.height / 2)).toFixed(0)} units above the buttons' lower edge, over them`);
-    }
+    // 4a. no marks (fb-104, owner: write, then send): nothing of the app's own checking is painted, whatever was typed or filled: no Check, Hint or Show me button or its words,
+    // no line of hint, no digit read from the pen, no tick, cross or ring, no tint of a cell found wrong, lit by a hint or being read
+    const checking = [...figures.map((f) => partOf(f.key)), ...elements.map((e) => partOf(e.key))].filter((name) => /^(btn:|bt:|ok:|bad:|hint$|r:|mark:(wrong|hint|reading)-)/.test(name));
+    if (checking.length > 0) problems.push(`${where}: the app's own checking is painted (${[...new Set(checking)].join(', ')})`);
     // 4b. typed: a digit a keyboard wrote stands in its cell, typeset (a text part of the block, centred in the box), and the answer is not drawn elsewhere
     for (const line of one.lines.filter((text) => text.startsWith('type '))) {
       const m = /^type \S+\.(\S+) \| (\d+)$/.exec(line);
@@ -127,16 +122,6 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
       if (word === undefined || frame === undefined) problems.push(`${where}: the digit typed in ${m[1]} is not drawn in its cell`);
       else if (word.text.trim() !== m[2] || Math.abs(word.x - (frame.x0 + frame.x1) / 2) > 2 || Math.abs(word.y - (frame.y0 + frame.y1) / 2) > frame.y1 - frame.y0) problems.push(`${where}: the digit typed in ${m[1]} reads "${word.text}" at ${word.x.toFixed(0)},${word.y.toFixed(0)}, not typeset in its cell`);
     }
-    // 4c. marks: a tick or a cross (the red pen) stands outside the digits: it touches no digit's ink, given or written
-    for (const mark of figures.filter((f) => /^(ok|bad):/.test(partOf(f.key)))) {
-      for (const e of elements.filter((candidate) => /^c:/.test(partOf(candidate.key)) && candidate.text.trim() !== '')) {
-        // the ink of a digit: a line box is taller than the digits in it, and a digit is about half as wide as the line is tall
-        const w = e.height * 0.55 * e.text.trim().length;
-        const h = e.height * 0.6;
-        if (mark.x1 > e.x - w / 2 && mark.x0 < e.x + w / 2 && mark.y1 > e.y - h / 2 && mark.y0 < e.y + h / 2) problems.push(`${where}: the mark ${partOf(mark.key)} lies on the digit ${partOf(e.key)}`);
-      }
-    }
-    if (one.lines.some((line) => /^press \S+ check$/.test(line)) && figures.filter((f) => /^(ok|bad):/.test(partOf(f.key))).length < 2) problems.push(`${where}: Check left fewer than two marks (a tick and a cross)`);
     // 5. rule: spans the columns of every digit and sign
     const rule = figures.find((f) => partOf(f.key) === 'rule');
     if (isGrid && method !== 'split' && method !== 'bond') {
@@ -192,9 +177,9 @@ export async function startMathsServer(extra: Readonly<Record<string, string>> =
   const scratch = await mkdtemp(join(tmpdir(), 'conduit-maths-'));
   await mkdir(join(scratch, 'skills'), { recursive: true });
   const port = await claimPort('a maths server');
-  // fb-091. A sum that is finished is an act turn for the brain: the replay brain answers it with a pause, so the page holds as it was marked (each act once a session, so many)
+  // fb-104. What is written on a sum goes up as a drawing turn: the replay brain answers it with a pause, so the page holds as it was (each turn once a session, so many)
   const acts = join(scratch, 'acts.json');
-  await writeFile(acts, JSON.stringify({ turns: Array.from({ length: 300 }, () => ({ match: 'kind:act', script: 'wait 0.2s' })) }));
+  await writeFile(acts, JSON.stringify({ turns: Array.from({ length: 300 }, () => ({ match: 'Please look at what I drew.', script: 'wait 0.2s' })) }));
   let log = '';
   const child: ChildProcess = spawnTracked(process.execPath, ['--import', 'tsx', 'src/main.ts'], undefined, {
     cwd: join(root, 'server'),
@@ -225,13 +210,9 @@ interface CellView {
   readonly box: { x: number; y: number; width: number; height: number };
   readonly value: string;
   readonly by: string;
-  readonly mark: string;
   readonly optional: boolean;
   readonly order: number | null;
-  readonly lit: boolean;
   readonly active: boolean;
-  readonly read: string;
-  readonly reading: boolean;
   readonly ink: boolean;
   readonly dim: boolean;
   readonly clear: { x: number; y: number; width: number; height: number } | null;
@@ -239,10 +220,7 @@ interface CellView {
 interface BlockView {
   readonly key: string;
   readonly id: string;
-  readonly verdict: string;
   readonly cells: CellView[];
-  readonly buttons: { name: string; label: string; box: { x: number; y: number; width: number; height: number } }[];
-  readonly hint: string;
 }
 
 const KEY_CODES: Readonly<Record<string, { readonly vk: number; readonly text?: string }>> = {
@@ -321,7 +299,7 @@ export class MathsTab {
     for (const character of text) await this.press(character);
   }
 
-  /** the acts the page told the brain, as text */
+  /** the acts the page told the brain, as text: none now, a written method tells the brain nothing of its own (fb-104) */
   acts(): Promise<string[]> {
     return this.tab.eval<string[]>(`window.__stage.events().filter((e) => e.type === 'control' && e.ask === true).map((e) => e.text)`);
   }
@@ -339,12 +317,12 @@ export class MathsTab {
 
 export const SUM = ['scene layout=stack mood=calm', 'math m1 column | 12+12+12+12+12+12'].join('\n');
 
-/** What this screen's keys, hint and fill checks found, as problems by check. */
+/** What this screen's keys, fill, pen and send checks found, as problems by check. */
 interface Problems {
   readonly [check: string]: string[];
 }
 
-/** The keyboard: a finger tap focuses a cell inside the gesture, digits walk the sum in working order, Backspace, Tab and the arrows, Enter marks it, the keyboard never covers the cell. */
+/** The keyboard: a finger tap focuses a cell inside the gesture, digits walk the sum in working order, Backspace, Tab and the arrows, Enter puts the keyboard away and marks nothing, the keyboard never covers the cell. */
 async function keysScene(mine: MathsTab, dir: string, problems: Problems): Promise<string[]> {
   const list = problems['keys'] as string[];
   const { screen } = mine;
@@ -416,7 +394,7 @@ async function keysScene(mine: MathsTab, dir: string, problems: Problems): Promi
   await sleep(200);
   const back = await mine.tab.eval<string>(`document.getElementById('stage').style.transform`);
   if (back !== '') list.push(`the page stays lifted (${back}) after the keyboard has gone`);
-  // 5. Enter marks: the right digits are ticked, and the brain is told in one act
+  // 5. Enter is the keyboard's Done: it goes, and nothing is marked or told (fb-104: the person writes, then sends). A finger on a cell is not also "the user pointed at" the sum (fb-093)
   await mine.hands.finger([await mine.centre(ones.box)]);
   // a tap on a machine busy with other groups can be lost to the browser's own gesture handling: once more, as a person would
   if ((await mine.focused()) === '') {
@@ -425,132 +403,132 @@ async function keysScene(mine: MathsTab, dir: string, problems: Problems): Promi
     await mine.hands.finger([await mine.centre(ones.box)]);
   }
   await mine.type('212');
+  const typed = await mine.shot(dir, `${screen.name}-maths-typed.png`);
   await mine.press('Enter');
-  const marked = await mine.block('m1');
-  const marks = marked?.cells.map((cell) => `${cell.part}=${cell.mark}`).join(' ');
-  if (marks !== 'ans-ones=right carry-tens=right ans-tens=wrong') list.push(`after typing 2, 1, 2 and Enter the marks are "${marks}"`);
+  await sleep(200);
+  if ((await mine.focused()) !== '') list.push(`Enter left the keyboard in "${await mine.focused()}", wanted it put away`);
+  const kept = (await mine.block('m1'))?.cells.map((cell) => `${cell.part}=${cell.value}`).join(' ');
+  if (kept !== 'ans-ones=2 carry-tens=1 ans-tens=2') list.push(`after typing 2, 1, 2 and Enter the cells hold "${kept}"`);
   const acts = await mine.acts();
-  if (!acts.some((act) => /^m1: ones right, carry tens right, tens wrong \(2\)$/.test(act))) list.push(`the brain was told ${JSON.stringify(acts)}, wanted one act "m1: ones right, carry tens right, tens wrong (2)"`);
+  if (acts.length !== 0) list.push(`the brain was told ${JSON.stringify(acts)} of the typing, wanted nothing: a written method tells it nothing of its own`);
+  const pointed = await mine.tab.eval<number>(`window.__stage.events().filter((e) => e.type === 'tap' && e.id === 'm1').length`);
+  if (pointed !== 0) list.push(`${pointed} finger press(es) on the written method were also told as taps on it ("the user pointed at m1"), wanted none`);
   await mine.blur();
   await sleep(200);
-  return [typing, await mine.shot(dir, `${screen.name}-maths-checked.png`)];
+  return [typing, typed];
 }
 
 
-/** Hint lights the next cell and says its step without its digit; Show me is offered only after a wrong try, fills one cell and marks it as shown. Checked at 820x971 and read in the screenshots. */
-async function hintScene(mine: MathsTab, dir: string, problems: Problems): Promise<{ readonly checked: string; readonly hinted: string }> {
-  const list = problems['hint'] as string[];
-  const { screen } = mine;
-  const press = async (name: string): Promise<boolean> => {
-    const button = (await mine.block('m2'))?.buttons.find((candidate) => candidate.name === name);
-    if (button === undefined) return false;
-    await mine.hands.finger([await mine.centre(button.box)]);
-    return true;
-  };
-  const played = await mine.play(['scene layout=stack mood=calm', 'math m2 column | 12+12+12+12+12+12'].join('\n'));
+/**
+ * fb-104 (owner: write, then send). A sum is written on with the pen and sent: pen-write 344 into 43 x 8's boxes and press the ink bar's Send. Exactly one drawing turn goes
+ * up, with `on.element` the sum's id, the strokes counted right and the picture of the stage with the writing on it; no handwriting read is asked for, and neither Check, Hint
+ * nor Show me is in the page or in what the painter says the block has. The picture the model is given is saved to look at.
+ */
+async function sendScene(mine: MathsTab, dir: string, problems: Problems): Promise<string> {
+  const list = problems['send'] as string[];
+  const { tab, hands, screen } = mine;
+  const played = await mine.play(['scene layout=stack mood=calm', 'math m9 times | 43 × 8'].join('\n'));
   if (played !== '') {
     list.push(played);
-    return { checked: '', hinted: '' };
+    return '';
   }
-  const names = (await mine.block('m2'))?.buttons.map((button) => button.name).join(',');
-  if (names !== 'check,hint') list.push(`before any try the buttons are "${names}", wanted check,hint (Show me comes only after a wrong try)`);
-  // a wrong try: the tens left empty is ringed (not wrong), the ones written wrong is crossed
-  await mine.hands.finger([await mine.centre((await mine.cell('m2', 'ans-ones'))?.box ?? { x: 0, y: 0, width: 1, height: 1 })]);
-  await mine.type('9');
-  if (!(await press('check'))) list.push('no Check button');
-  await sleep(250);
-  const marked = (await mine.block('m2'))?.cells.map((cell) => `${cell.part}=${cell.mark}`).join(' ');
-  if (marked !== 'ans-ones=wrong carry-tens= ans-tens=empty') list.push(`after a 9 in the ones and Check the marks are "${marked}", wanted the ones crossed, the carry left alone and the tens ringed`);
-  const checked = await mine.shot(dir, `${screen.name}-maths-ringed.png`);
-  const acts = await mine.acts();
-  if (!acts.some((act) => act === 'm2: ones wrong (9), tens empty')) list.push(`the brain was told ${JSON.stringify(acts.slice(-3))}, wanted "m2: ones wrong (9), tens empty"`);
-  if (!(await mine.block('m2'))?.buttons.some((button) => button.name === 'show')) list.push('Show me was not offered after a wrong try');
-  // Hint: the first cell not yet right, in working order (the ones), and its step in words, never the digit it takes
-  if (!(await press('hint'))) list.push('no Hint button');
-  await sleep(250);
-  const after = await mine.block('m2');
-  const lit = after?.cells.filter((cell) => cell.lit).map((cell) => cell.part).join(',');
-  if (lit !== 'ans-ones') list.push(`Hint lit "${lit}", wanted ans-ones`);
-  const words = after?.hint ?? '';
-  if (!/ones/.test(words) || !/2\+2\+2\+2\+2\+2/.test(words)) list.push(`the hint says "${words}", wanted the step in words ("add the ones: 2+2+2+2+2+2")`);
-  if (/\b72\b|=|\b12\b/.test(words)) list.push(`the hint "${words}" gives the answer away`);
-  const hinted = await mine.shot(dir, `${screen.name}-maths-hint.png`);
-  // Show me fills one cell, in working order, marked as shown
-  if (!(await press('show'))) list.push('no Show me button');
-  await sleep(250);
-  const shown = (await mine.block('m2'))?.cells.map((cell) => `${cell.part}=${cell.value}:${cell.by}:${cell.mark}`).join(' ');
-  if (shown !== 'ans-ones=2:shown:shown carry-tens=:: ans-tens=::empty') list.push(`after Show me the cells are "${shown}", wanted only the ones filled (2) as shown`);
-  return { checked, hinted };
+  const block = await mine.block('m9');
+  if (block === undefined) {
+    list.push('43 × 8 has no cells to write in');
+    return '';
+  }
+  // 1. nothing of the app's own checking: not in the painter's account of the block, not a button or a label in the page
+  if ('buttons' in block || 'hint' in block || 'verdict' in block) list.push(`the painter still says the block has ${['buttons', 'hint', 'verdict'].filter((name) => name in block).join(', ')}`);
+  const checking = await tab.eval<string[]>(`[...document.querySelectorAll('button, [role="button"], [aria-label]')].map((n) => ((n.textContent || '') + '|' + (n.getAttribute('aria-label') || '')).trim()).filter((t) => /(^|\\|)\\s*(check|hint|show me)\\b/i.test(t))`);
+  if (checking.length > 0) list.push(`Check, Hint or Show me is in the page: ${JSON.stringify(checking.slice(0, 4))}`);
+  // 2. what leaves the page is watched: every fetch, and every turn
+  await tab.eval(`window.__fetched = []; const was = window.fetch; window.fetch = function (input, init) { try { window.__fetched.push((init && init.method || 'GET') + ' ' + String(input && input.url || input)); } catch (e) {} return was.apply(this, arguments); }`);
+  const turnsBefore = tab.posted.length;
+  const stroke = async (part: string, from: [number, number], to: [number, number], n = 10): Promise<void> => {
+    const box = (await mine.cell('m9', part))?.box;
+    if (box === undefined) throw new Error(`no cell m9.${part}`);
+    await hands.pen(line(await mine.centre(box, { x: from[0], y: from[1] }), await mine.centre(box, { x: to[0], y: to[1] }), n));
+  };
+  // 3. 344, as a child might: a 3 in the ones' column is a bar and a curve (two strokes), a 4 in the tens two (one down, one across), another 3 in the hundreds one
+  const parts = block.cells.map((cell) => cell.part).filter((part) => /^ans-/.test(part));
+  const [ones, tens, hundreds] = ['ans-ones', 'ans-tens', 'ans-hundreds'];
+  if (!parts.includes(ones as string) || !parts.includes(tens as string) || !parts.includes(hundreds as string)) {
+    list.push(`43 × 8 has the answer boxes ${parts.join(', ')}, wanted ans-ones, ans-tens and ans-hundreds`);
+    return '';
+  }
+  const written: [string, [number, number], [number, number]][] = [
+    [ones as string, [0.3, 0.2], [0.7, 0.3]],
+    [ones as string, [0.7, 0.3], [0.4, 0.8]],
+    [tens as string, [0.3, 0.15], [0.3, 0.8]],
+    [tens as string, [0.2, 0.55], [0.8, 0.55]],
+    [hundreds as string, [0.3, 0.2], [0.7, 0.8]],
+  ];
+  for (const [part, from, to] of written) await stroke(part, from, to);
+  const here = await tab.eval<number>('window.__penWrite ? window.__penWrite.owners().filter((o) => o.key.startsWith("m9")).length : -1');
+  if (here !== written.length) list.push(`${written.length} pen strokes in the answer boxes are ${here} owned by the sum`);
+  const picture = await mine.shot(dir, `${screen.name}-maths-written.png`);
+  // 4. the ink bar's Send is there with the writing (it was hidden for strokes in a sum's boxes before), and nothing has gone up or been read
+  const button = await tab.eval<{ x: number; y: number; w: number; h: number } | null>(`(() => { const b = document.querySelector('.ink-btn--send'); if (!b) return null; const r = b.getBoundingClientRect(); const hidden = !!b.closest('[hidden]') || r.width === 0; return hidden ? null : { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; })()`);
+  if (button === null) {
+    list.push('the strokes written in the sum leave no Send on the screen');
+    return picture;
+  }
+  if (tab.posted.length !== turnsBefore) list.push('a turn went up before Send was pressed');
+  // a finger that comes within half a second of the pen is a palm: the wait is the guard's grace
+  await sleep(700);
+  await hands.finger([{ x: button.x, y: button.y }]);
+  await waitFor('the drawing turn', 10_000, async () => (tab.posted.length > turnsBefore ? true : null)).catch(() => undefined);
+  await sleep(600);
+  const turns = tab.posted.slice(turnsBefore);
+  if (turns.length !== 1) {
+    list.push(`Send posted ${turns.length} turn(s) (${JSON.stringify(turns.map((turn) => `${turn.kind}:${turn.text}`))}), wanted exactly one`);
+    return picture;
+  }
+  const sent = JSON.parse(turns[0]?.body ?? '{}') as { input?: { kind?: string; text?: string; marks?: { image?: string; on?: { element?: string; node?: string }; strokes?: unknown[]; regions?: unknown[] } } };
+  const marks = sent.input?.marks;
+  if (sent.input?.kind !== 'prompt') list.push(`the turn is a ${sent.input?.kind}, wanted a drawing turn (a prompt with marks)`);
+  if (sent.input?.text !== 'Please look at what I drew.') list.push(`the words are "${sent.input?.text}", wanted Draw's own`);
+  if (marks === undefined) list.push('the turn carries no marks (the picture and the strokes)');
+  else {
+    if (marks.on?.element !== 'm9') list.push(`the ink says it was drawn on element "${marks.on?.element}", wanted the sum's id m9`);
+    if ((marks.strokes ?? []).length !== written.length) list.push(`the turn carries ${(marks.strokes ?? []).length} strokes, wanted ${written.length}`);
+    if (!/^u[1-9][0-9]*$/.test(marks.image ?? '')) list.push(`the picture is "${marks.image}", wanted an upload id`);
+  }
+  // 5. what the model is shown: the picture of the stage with the writing on it, kept to be looked at (the stage's own digits and boxes under the ink, not ink on white)
+  const picked = marks?.image;
+  if (picked !== undefined && /^u[1-9][0-9]*$/.test(picked)) {
+    const kept = await fetch(String(turns[0]?.url ?? '').replace(/\/turns$/, `/uploads/${picked}`)).catch(() => null);
+    if (kept === null || !kept.ok) list.push(`the picture ${picked} the turn carries was not kept by the server`);
+    else await writeFile(join(dir, `${screen.name}-maths-sent.png`), Buffer.from(await kept.arrayBuffer()));
+  }
+  const fetched = await tab.eval<string[]>('window.__fetched');
+  const reads = fetched.filter((request) => /read-ink/.test(request));
+  if (reads.length > 0) list.push(`a handwriting read was asked for: ${JSON.stringify(reads)}`);
+  if ((await tab.eval<number>('(window.__mathReads || []).length')) !== 0) list.push('the page logged a handwriting read');
+  // 6. the writing went up with the turn: none is left on the stage, and the sum is still there to be answered on
+  if ((await hands.strokes())?.strokes.length !== 0) list.push(`${(await hands.strokes())?.strokes.length} stroke(s) are still on the stage after Send`);
+  if ((await mine.acts()).length !== 0) list.push(`the brain was also told ${JSON.stringify(await mine.acts())} as an act`);
+  return picture;
 }
 
-/** fb-091. A sum that is finished goes to the brain as an act turn, with how she got there; a wrong try goes to it only as a line to hear with the next. Show me that gives the last box finishes it too. */
-async function sendScene(mine: MathsTab, problems: Problems): Promise<void> {
-  const list = problems['send'] as string[];
-  const played = await mine.play(['scene layout=stack mood=calm', 'math m9 column | 1+1'].join('\n'));
-  if (played !== '') return void list.push(played);
-  const turns = (): number => mine.tab.posted.filter((turn) => turn.kind === 'act').length;
-  const press = async (name: string): Promise<void> => {
-    const button = (await mine.block('m9'))?.buttons.find((candidate) => candidate.name === name);
-    if (button === undefined) throw new Error(`no ${name} button on m9`);
-    await mine.hands.finger([await mine.centre(button.box)]);
-    await sleep(300);
-  };
-  const write = async (digit: string): Promise<void> => {
-    await mine.hands.finger([await mine.centre((await mine.cell('m9', 'ans-ones'))?.box ?? { x: 0, y: 0, width: 1, height: 1 })]);
-    await mine.press('Backspace');
-    await mine.press(digit);
-    await sleep(150);
-  };
-  const before = turns();
-  await write('3');
-  await press('check');
-  if (turns() !== before) list.push('a wrong Check sent a turn to the brain: only a finished sum is meant to');
-  await press('hint');
-  await write('2');
-  await press('check');
-  await waitFor('the act turn of the finished sum', 8_000, async () => (turns() > before ? true : null)).catch(() => undefined);
-  const sent = mine.tab.posted.filter((turn) => turn.kind === 'act').slice(before).map((turn) => turn.text ?? '');
-  if (sent.length !== 1) list.push(`finishing the sum sent ${sent.length} act turn(s) (${JSON.stringify(sent)}), wanted one`);
-  else if (sent[0] !== 'm9: all right, after 1 wrong check (ones 3) and 1 hint') list.push(`the act that finished the sum says "${sent[0]}", wanted "m9: all right, after 1 wrong check (ones 3) and 1 hint"`);
-  // Show me that gives the last box finishes it as well, and says so
-  const shown = await mine.play(['scene layout=stack mood=calm', 'math m10 column | 1+1'].join('\n'));
-  if (shown !== '') return void list.push(shown);
-  const first = turns();
-  await mine.hands.finger([await mine.centre((await mine.cell('m10', 'ans-ones'))?.box ?? { x: 0, y: 0, width: 1, height: 1 })]);
-  await mine.press('4');
-  const check = (await mine.block('m10'))?.buttons.find((candidate) => candidate.name === 'check');
-  if (check !== undefined) await mine.hands.finger([await mine.centre(check.box)]);
-  await sleep(300);
-  const show = (await mine.block('m10'))?.buttons.find((candidate) => candidate.name === 'show');
-  if (show === undefined) return void list.push('Show me was not offered on m10 after a wrong try');
-  await mine.hands.finger([await mine.centre(show.box)]);
-  await waitFor('the act turn of the shown sum', 8_000, async () => (turns() > first ? true : null)).catch(() => undefined);
-  const told = mine.tab.posted.filter((turn) => turn.kind === 'act').slice(first).map((turn) => turn.text ?? '');
-  // fb-093. A finger on a box or a button works the block and is not also "the user pointed at" it: the brain is told of the acts, not of a tap on a block it cannot name a part of
-  const pointed = await mine.tab.eval<number>(`window.__stage.events().filter((e) => e.type === 'tap' && /^m(9|10)$/.test(e.id)).length`);
-  if (pointed !== 0) list.push(`${pointed} finger press(es) on the written method were also told as taps on it ("the user pointed at m9"), wanted none`);
-  if (told.length !== 1 || !/^m10: was shown the ones/.test(told[0] ?? '')) list.push(`the Show me that finished the sum sent ${JSON.stringify(told)}, wanted one act "m10: was shown the ones…"`);
-}
-
-/** `fill m1 | 72` and `fill m1.ans-ones | 2` put digits in the cells, once, marked as a Check marks them; a hand after a fill wins. */
+/** `fill m1 | 72` and `fill m1.ans-ones | 2` put digits in the cells, once, and mark nothing; a hand after a fill wins. */
 async function fillScene(mine: MathsTab, problems: Problems): Promise<void> {
   const list = problems['fill'] as string[];
   const first = await mine.play([SUM, 'fill m1 | 72'].join('\n'));
   if (first !== '') return void list.push(first);
-  const whole = (await mine.block('m1'))?.cells.map((cell) => `${cell.part}=${cell.value}:${cell.by}:${cell.mark}`).join(' ');
-  if (whole !== 'ans-ones=2:fill:right carry-tens=:: ans-tens=7:fill:right') list.push(`fill m1 | 72 left the cells "${whole}"`);
-  if ((await mine.block('m1'))?.verdict !== 'right') list.push(`after a right fill the sum is "${(await mine.block('m1'))?.verdict}", wanted right`);
+  const whole = (await mine.block('m1'))?.cells.map((cell) => `${cell.part}=${cell.value}:${cell.by}`).join(' ');
+  if (whole !== 'ans-ones=2:fill carry-tens=: ans-tens=7:fill') list.push(`fill m1 | 72 left the cells "${whole}"`);
   const second = await mine.play(['scene layout=stack mood=calm', 'math m3 column | 12+12', 'fill m3.ans-ones | 9', 'fill m3.ans-tens | 2'].join('\n'));
   if (second !== '') return void list.push(second);
-  const part = (await mine.block('m3'))?.cells.map((cell) => `${cell.part}=${cell.value}:${cell.mark}`).join(' ');
-  if (part !== 'ans-ones=9:wrong ans-tens=2:right') list.push(`fill m3.ans-ones | 9 and fill m3.ans-tens | 2 left "${part}", wanted the ones wrong and the tens right`);
+  const part = (await mine.block('m3'))?.cells.map((cell) => `${cell.part}=${cell.value}`).join(' ');
+  if (part !== 'ans-ones=9 carry-tens= ans-tens=2') list.push(`fill m3.ans-ones | 9 and fill m3.ans-tens | 2 left "${part}", wanted both written as the line gave them (nothing says the 9 is wrong)`);
   // a hand that writes after the fill wins: the 4 typed over the filled 9
   const ones = (await mine.cell('m3', 'ans-ones'))?.box;
   if (ones !== undefined) {
     await mine.hands.finger([await mine.centre(ones)]);
     await mine.press('4');
     const now = await mine.cell('m3', 'ans-ones');
-    if (now?.value !== '4' || now.by !== 'key' || now.mark !== '') list.push(`a 4 typed over a filled 9 left "${now?.value}" by ${now?.by} marked "${now?.mark}"`);
+    if (now?.value !== '4' || now.by !== 'key') list.push(`a 4 typed over a filled 9 left "${now?.value}" by ${now?.by}`);
   }
 }
 
@@ -559,16 +537,14 @@ interface PenHook {
   owners(): { stroke: string; key: string; part: string }[];
   free(): string[];
   colours(): string[];
-  hold(on: boolean): void;
 }
 
-/** The pen: no Draw, one stroke owned by its cell, the larger share wins, a finger leaves no ink, the fake reader's digits show and Check marks them, a misread is corrected by a tap and a typed digit. */
+/** The pen: no Draw, one stroke owned by its cell, the larger share wins, a finger leaves no ink, nothing is read, a typed digit over the ink dims it and the ✕ takes it off. */
 async function penScene(mine: MathsTab, dir: string, problems: Problems): Promise<string> {
   const list = problems['pen'] as string[];
   const { tab, hands, screen } = mine;
   const owners = (): Promise<PenHook['owners'] extends () => infer R ? R : never> => tab.eval('window.__penWrite ? window.__penWrite.owners() : []');
   const strokes = async (): Promise<number> => (await hands.strokes())?.strokes.length ?? 0;
-  const reads = (): Promise<{ cells: number; totalMs: number }[]> => tab.eval('window.__mathReads || []');
   const stroke = async (id: string, part: string, from: [number, number], to: [number, number], n = 10): Promise<void> => {
     const box = (await mine.cell(id, part))?.box;
     if (box === undefined) throw new Error(`no cell ${id}.${part}`);
@@ -606,11 +582,6 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
   await tab.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await sleep(300);
   if ((await mine.focused()) !== '') list.push(`a palm (a contact 160 wide) took the keyboard into "${await mine.focused()}"`);
-  // The page reads what the pen wrote 800 ms after it lifts, so a number written in one go is read in one request. Here each stroke is written by events that come back late on a
-  // busy machine, and 800 ms can pass between two strokes of one sequence (which a person would also get as two reads, by design). The claim below is about the batching, not about the
-  // wall clock, so the page's pause is held while the sequence is written and let go when it is done (`__penWrite.hold`, for this check only).
-  const hold = (on: boolean): Promise<void> => tab.eval(`window.__penWrite.hold(${on})`);
-  await hold(true);
   // 1. a pen stroke with Draw closed is one stroke, owned by the cell it is in
   await stroke('m4', 'ans-tens', [0.25, 0.2], [0.75, 0.8]);
   if (await hands.drawToggle()) list.push('writing with the pen opened Draw');
@@ -627,59 +598,32 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
   await hands.pen(line(await hands.onScreen(band), await hands.onScreen({ x: band.x + 90, y: band.y + 8 }), 8));
   const third = await owners();
   if (third.length !== 2) list.push(`ink far above every cell was given to a cell (${JSON.stringify(third)}), wanted free working`);
-  // 3. more strokes: the tens cell holds two, the ones cell four (the fake reader reads a cell's strokes as its digit)
+  // 3. more strokes: the tens cell holds two, the ones cell four. Nothing reads them, and nothing marks them: the ink stays where it is written
   await stroke('m4', 'ans-tens', [0.2, 0.7], [0.8, 0.3]);
   for (const [a, b] of [[[0.2, 0.2], [0.3, 0.8]], [[0.5, 0.2], [0.6, 0.8]], [[0.75, 0.2], [0.8, 0.8]]] as [number, number][][]) await stroke('m4', 'ans-ones', a as [number, number], b as [number, number], 6);
-  // it is read once, 800 ms after the pen lifts: both cells in one request, shown small beside the ink
-  await hold(false);
-  await wait('the digits to be read into the cells', async () => (await mine.cell('m4', 'ans-ones'))?.read !== '' && (await mine.cell('m4', 'ans-tens'))?.read !== '');
-  const done = await reads();
-  if (done.length !== 1 || done[0]?.cells !== 2) list.push(`the pen's writing was read in ${done.length} request(s) (${JSON.stringify(done)}), wanted one with both cells`);
-  const got = (await mine.block('m4'))?.cells.filter((cell) => cell.by === 'pen').map((cell) => `${cell.part}=${cell.read}:${cell.ink}`).sort().join(' ');
-  if (got !== 'ans-ones=4:true ans-tens=2:true') list.push(`the cells read "${got}", wanted ans-ones=4 and ans-tens=2 (the strokes counted by the fake reader)`);
+  const held = (await owners()).filter((o) => o.key.startsWith('m4'));
+  const counts = held.reduce<Record<string, number>>((out, o) => ({ ...out, [o.part]: (out[o.part] ?? 0) + 1 }), {});
+  if (counts['ans-tens'] !== 2 || counts['ans-ones'] !== 4) list.push(`the sum's cells own ${JSON.stringify(counts)}, wanted ans-tens 2 and ans-ones 4`);
+  await sleep(1200);
   const penned = await mine.shot(dir, `${screen.name}-maths-pen.png`);
-  // Check marks what the pen wrote (a finger that comes within half a second of the pen is a palm: the wait is the guard's grace)
-  await sleep(500);
-  await hands.finger([await mine.centre(((await mine.block('m4'))?.buttons.find((button) => button.name === 'check') as { box: { x: number; y: number; width: number; height: number } }).box)]);
-  await sleep(300);
-  const marks = (await mine.block('m4'))?.cells.filter((cell) => cell.by === 'pen').map((cell) => `${cell.part}=${cell.mark}`).sort().join(' ');
-  if (marks !== 'ans-ones=right ans-tens=right') list.push(`Check on the pen's 4 and 2 marked "${marks}"`);
-  if (!(await mine.acts()).some((act) => act === 'm4: all right')) list.push(`the brain was told ${JSON.stringify((await mine.acts()).slice(-2))}, wanted "m4: all right"`);
-  // 4. Check reads what has not been read yet: two strokes in the ones cell and Check at once (inside the 800 ms)
-  const q = await mine.play(['scene layout=stack mood=calm', 'math m5 column | 1+1'].join('\n'));
-  if (q !== '') list.push(q);
-  else {
-    const before = (await reads()).length;
-    // held, for the reason above: the second stroke has to be unread when Check is tapped, which a pause of 800 ms on a busy machine would not leave
-    await hold(true);
-    await stroke('m5', 'ans-ones', [0.25, 0.2], [0.35, 0.8], 6);
-    await stroke('m5', 'ans-ones', [0.6, 0.2], [0.7, 0.8], 6);
-    const check = (await mine.block('m5'))?.buttons.find((button) => button.name === 'check');
-    if (check === undefined) list.push('no Check button on the second sum');
-    else {
-      // just past the palm guard's half second, and inside the 800 ms: the pen's last stroke has not been read yet
-      await sleep(170);
-      await hands.finger([await mine.centre(check.box)]);
-      await wait('Check to mark what the pen wrote', async () => (await mine.cell('m5', 'ans-ones'))?.mark === 'right');
-      if ((await reads()).length !== before + 1) list.push(`Check made ${(await reads()).length - before} read request(s), wanted one`);
-    }
-    await hold(false);
-  }
-  // 5. a misread: three strokes are read as 3 where a 4 was meant; a tap opens the cell's input with the 3 selected, a typed 4 wins and the ink dims
+  const quiet = (await mine.block('m4'))?.cells.map((cell) => `${cell.part}=${cell.value}:${cell.by}:${cell.ink}`).sort().join(' ');
+  if (quiet !== 'ans-ones=::true ans-tens=::true carry-tens=::false') list.push(`after the pen wrote the cells hold "${quiet}", wanted ink in the ones and the tens and no digit read into either`);
+  if ((await tab.eval<number>('(window.__mathReads || []).length')) !== 0) list.push('the page read the pen\'s writing');
+  // 5. a typed digit over the ink: the digit stands, the ink goes faint, and the ✕ takes the ink off and keeps the digit
   const r = await mine.play(['scene layout=stack mood=calm', 'math m6 column | 12+12'].join('\n'));
   if (r !== '') list.push(r);
   else {
     for (const [a, b] of [[[0.2, 0.2], [0.3, 0.8]], [[0.5, 0.2], [0.6, 0.8]], [[0.75, 0.2], [0.8, 0.8]]] as [number, number][][]) await stroke('m6', 'ans-ones', a as [number, number], b as [number, number], 6);
-    await wait('the three strokes to be read', async () => (await mine.cell('m6', 'ans-ones'))?.read === '3');
+    await wait('the three strokes to be the ones cell\'s ink', async () => (await mine.cell('m6', 'ans-ones'))?.ink === true);
     const cell = (await mine.cell('m6', 'ans-ones'))?.box as { x: number; y: number; width: number; height: number };
     await sleep(500);
     await mine.upFocus();
     await hands.finger([await mine.centre(cell)]);
     const selected = await tab.eval<string>(`(() => { const a = document.activeElement; return a && a.dataset && a.dataset.mathCell === 'ans-ones' ? a.value + ':' + a.selectionStart + '-' + a.selectionEnd : 'none'; })()`);
-    if (selected !== '3:0-1') list.push(`a tap on the misread cell opened "${selected}", wanted its input holding 3 with the 3 selected`);
+    if (selected !== ':0-0') list.push(`a tap on the cell with ink opened "${selected}", wanted its input empty (nothing was read from the ink)`);
     await mine.press('4');
     const typed = await mine.cell('m6', 'ans-ones');
-    if (typed?.value !== '4' || typed.by !== 'key' || !typed.dim) list.push(`a 4 typed over the read 3 left "${typed?.value}" by ${typed?.by}, dim ${typed?.dim}: typing should win and the ink dim`);
+    if (typed?.value !== '4' || typed.by !== 'key' || !typed.dim) list.push(`a 4 typed over the ink left "${typed?.value}" by ${typed?.by}, dim ${typed?.dim}: the digit should stand and the ink dim`);
     await sleep(300);
     const colours = await tab.eval<string[]>('window.__penWrite.colours()');
     if (colours.filter((colour) => colour === '#b9b3a8').length !== 3) list.push(`the three strokes under the typed digit are not all faint (${colours.join(',')})`);
@@ -689,12 +633,12 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
     else {
       await mine.blur();
       await hands.finger([await mine.centre(cross)]);
-      await wait('the ✕ to take the ink off', async () => (await strokes()) === 0 || (await tab.eval<number>('window.__penWrite.owners().filter((o) => o.key.startsWith("m6")).length')) === 0);
+      await wait('the ✕ to take the ink off', async () => (await tab.eval<number>('window.__penWrite.owners().filter((o) => o.key.startsWith("m6")).length')) === 0);
       const cleared = await mine.cell('m6', 'ans-ones');
       if (cleared?.ink !== false || cleared.value !== '4') list.push(`after ✕ the cell holds ink ${cleared?.ink} and "${cleared?.value}", wanted no ink and the typed 4 kept`);
     }
   }
-  // 6. mixed: the pen in the ones cell, keys in the tens cell, one Check
+  // 6. mixed: the pen in the ones cell, keys in the tens cell. The tens holds its digit, the ones none (the ink is the answer's, and it is read by whoever it is sent to)
   const x = await mine.play(['scene layout=stack mood=calm', 'math m7 column | 12+12'].join('\n'));
   if (x !== '') list.push(x);
   else {
@@ -702,11 +646,11 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
     await sleep(500);
     await mine.hands.finger([await mine.centre((await mine.cell('m7', 'ans-tens'))?.box as { x: number; y: number; width: number; height: number })]);
     await mine.press('2');
-    await wait('the pen and the keys to be in their cells', async () => (await mine.cell('m7', 'ans-ones'))?.read === '4');
+    await wait('the pen and the keys to be in their cells', async () => (await mine.cell('m7', 'ans-ones'))?.ink === true && (await mine.cell('m7', 'ans-tens'))?.value === '2');
     await mine.press('Enter');
     await sleep(300);
-    const mixed = (await mine.block('m7'))?.cells.filter((cell) => cell.part !== 'carry-tens').map((cell) => `${cell.part}=${cell.value}:${cell.by}:${cell.mark}`).sort().join(' ');
-    if (mixed !== 'ans-ones=4:pen:right ans-tens=2:key:right') list.push(`the pen in the ones and keys in the tens, then Enter, left "${mixed}"`);
+    const mixed = (await mine.block('m7'))?.cells.filter((cell) => cell.part !== 'carry-tens').map((cell) => `${cell.part}=${cell.value}:${cell.by}:${cell.ink}`).sort().join(' ');
+    if (mixed !== 'ans-ones=::true ans-tens=2:key:false') list.push(`the pen in the ones and keys in the tens left "${mixed}"`);
   }
   // 7. fb-097: the working a sum had written leaves with the sum. A new sum under the same id starts clean (no ink owned, none in its boxes), and a scene with no written
   // method takes the ink off as well
@@ -738,7 +682,7 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
 }
 
 
-/** The marking in a dark look: the learner's digits in ink, the red pen's tick and cross beside them. A picture to look at (the colours are the look's own). */
+/** A sum in a dark look, written in by key and by pen: the learner's digits in pencil, the ink where it is written, nothing marked. A picture to look at (the colours are the look's own). */
 async function darkScene(base: string, screen: InputScreen, dir: string, timeoutMs: number, problems: Problems): Promise<string> {
   const list = problems['keys'] as string[];
   const dark = await MathsTab.open(base, screen, dir, timeoutMs, 'look=night');
@@ -749,13 +693,15 @@ async function darkScene(base: string, screen: InputScreen, dir: string, timeout
       return '';
     }
     const ones = (await dark.cell('m1', 'ans-ones'))?.box;
-    if (ones === undefined) return '';
+    const tens = (await dark.cell('m1', 'ans-tens'))?.box;
+    if (ones === undefined || tens === undefined) return '';
     await dark.hands.finger([await dark.centre(ones)]);
-    await dark.type('212');
-    await dark.press('Enter');
+    await dark.type('2');
     await dark.blur();
+    await sleep(700);
+    await dark.hands.pen(line(await dark.centre(tens, { x: 0.3, y: 0.2 }), await dark.centre(tens, { x: 0.7, y: 0.8 }), 8));
     await sleep(300);
-    return await dark.shot(dir, `${screen.name}-maths-checked-night.png`);
+    return await dark.shot(dir, `${screen.name}-maths-typed-night.png`);
   } finally {
     await dark.close();
   }
@@ -763,18 +709,16 @@ async function darkScene(base: string, screen: InputScreen, dir: string, timeout
 
 /** One screen's whole input run. */
 async function inputScreen(base: string, screen: InputScreen, dir: string, timeoutMs: number, note: (text: string) => void): Promise<{ results: CheckResult[]; pictures: string[] }> {
-  const problems: Problems = { keys: [], hint: [], fill: [], pen: [], send: [], notes: [] };
+  const problems: Problems = { keys: [], fill: [], pen: [], send: [], notes: [] };
   const pictures: string[] = [];
   note(`maths input: ${screen.name}`);
   const mine = await MathsTab.open(base, screen, dir, timeoutMs);
   try {
     pictures.push(...(await keysScene(mine, dir, problems)));
-    const { checked, hinted } = await hintScene(mine, dir, problems);
-    pictures.push(checked, hinted);
     await fillScene(mine, problems);
-    await sendScene(mine, problems);
-    pictures.push(await darkScene(base, screen, dir, timeoutMs, problems));
     pictures.push(await penScene(mine, dir, problems));
+    pictures.push(await sendScene(mine, dir, problems));
+    pictures.push(await darkScene(base, screen, dir, timeoutMs, problems));
   } catch (error) {
     (problems['keys'] as string[]).push(`stopped: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
   } finally {
@@ -787,11 +731,10 @@ async function inputScreen(base: string, screen: InputScreen, dir: string, timeo
   };
   // not a failure: how often a tap was lost and made again, so that it can be watched
   for (const text of problems['notes'] ?? []) results.push({ turn: 0, check: 'maths-note', verdict: 'PASS', detail: `note: ${text}` });
-  add('keys', 'a finger tap focuses a cell inside the gesture; 2 moves to the carry then the tens; Backspace, Tab and the arrows walk the sum; Enter marks it; the active cell stays above a short visual viewport');
-  add('hint', 'Hint lights the next cell and says its step without its digit; Show me comes only after a wrong try and fills one cell as shown');
-  add('send', 'a wrong Check sends nothing; the Check that finishes the sum sends one act turn, saying how she got there (wrong checks and what was wrong, hints); Show me that gives the last box sends one too');
-  add('fill', 'fill m1 | 72 and fill m1.ans-ones | 2 put marked digits in the cells, and a later hand wins');
-  add('pen', 'with Draw closed a pen stroke is one stroke owned by its cell, the larger share wins, a finger and a palm leave no ink, a short pen tap is a press; the fake reader reads both cells in one request and Check marks them; a misread is corrected by a tap and a typed digit, the ✕ clears; pen and keys mix');
+  add('keys', 'a finger tap focuses a cell inside the gesture; 2 moves to the carry then the tens; Backspace, Tab and the arrows walk the sum; Enter puts the keyboard away and marks nothing; the active cell stays above a short visual viewport');
+  add('send', 'pen-written 344 in 43 x 8 and Send: one drawing turn on the sum\'s id with every stroke and its picture; no handwriting read; no Check, Hint or Show me in the page or the painter');
+  add('fill', 'fill m1 | 72 and fill m1.ans-ones | 2 put the digits in the cells, marked by nothing, and a later hand wins');
+  add('pen', 'with Draw closed a pen stroke is one stroke owned by its cell, the larger share wins, a finger and a palm leave no ink, a short pen tap is a press; nothing is read; a typed digit over the ink dims it and the ✕ takes it off; pen and keys mix');
   return { results, pictures };
 }
 
@@ -800,7 +743,7 @@ export async function mathsInputGroup(dir: string, timeoutMs: number, note: (tex
   let server: Started | null = null;
   const results: CheckResult[] = [];
   try {
-    server = await startMathsServer({ INK_READER: 'fake' });
+    server = await startMathsServer();
     for (const screen of INPUT_SCREENS) results.push(...(await inputScreen(server.url, screen, dir, timeoutMs, note)).results);
   } catch (error) {
     results.push({ turn: 0, check: 'maths-input', verdict: 'FAIL', detail: `stopped: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}` });
@@ -811,80 +754,22 @@ export async function mathsInputGroup(dir: string, timeoutMs: number, note: (tex
 }
 
 
-/** Live: one real handwriting read on a server with the Claude brain, to time it. A 1 in the ones cell and a 7 in the tens cell of 35 + 36, as one sheet of two tiles. */
-export async function mathsLive(dir: string, timeoutMs: number, note: (text: string) => void = () => undefined): Promise<CheckResult[]> {
-  let server: Started | null = null;
-  const screen = INPUT_SCREENS[0] as InputScreen;
-  const list: string[] = [];
-  let detail = '';
-  try {
-    note('maths live: a real handwriting read (BRAIN=claude-cli)');
-    server = await startMathsServer({ BRAIN: 'claude-cli', CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'sonnet', ...(process.env['INK_MODEL'] === undefined ? {} : { INK_MODEL: process.env['INK_MODEL'] }) });
-    const mine = await MathsTab.open(server.url, screen, dir, timeoutMs);
-    try {
-      const played = await mine.play(['scene layout=stack mood=calm', 'math m8 column | 35+36'].join('\n'));
-      if (played !== '') list.push(played);
-      const trace = async (part: string, points: readonly (readonly [number, number])[][]): Promise<void> => {
-        const box = (await mine.cell('m8', part))?.box;
-        if (box === undefined) throw new Error(`no cell ${part}`);
-        for (const path of points) {
-          const screenPoints: Point[] = [];
-          for (let at = 0; at < path.length - 1; at += 1) {
-            const a = path[at] as readonly [number, number];
-            const b = path[at + 1] as readonly [number, number];
-            screenPoints.push(...line(await mine.centre(box, { x: a[0], y: a[1] }), await mine.centre(box, { x: b[0], y: b[1] }), 6));
-          }
-          await mine.hands.pen(screenPoints);
-        }
-      };
-      // a 1 (a flag and a stem) and a 7 (a bar and a stem), as a child might
-      await trace('ans-ones', [[[0.3, 0.38], [0.52, 0.18]], [[0.52, 0.18], [0.52, 0.86]]]);
-      await trace('ans-tens', [[[0.22, 0.2], [0.78, 0.2]], [[0.78, 0.2], [0.4, 0.88]]]);
-      let reads: { cells: number; uploadMs: number; readMs: number; totalMs: number; ok: boolean }[] = [];
-      for (let waited = 0; waited < 90_000 && reads.length === 0; waited += 500) {
-        reads = await mine.tab.eval('window.__mathReads || []');
-        if (reads.length === 0) await sleep(500);
-      }
-      const one = reads[0];
-      const cells = (await mine.block('m8'))?.cells.map((cell) => `${cell.part}=${cell.read || '-'}`).join(' ') ?? '';
-      detail = one === undefined ? 'no read came back' : `one real read of ${one.cells} cells: ${one.totalMs} ms from the pen's lift to the digits (800 ms wait not counted): upload ${one.uploadMs} ms, read ${one.readMs} ms; the cells read ${cells}`;
-      if (one === undefined || !one.ok) list.push(detail);
-      await mine.shot(dir, `${screen.name}-maths-live.png`);
-    } finally {
-      await mine.close();
-    }
-  } catch (error) {
-    list.push(`stopped: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
-  } finally {
-    await server?.stop();
-  }
-  return [{ turn: 0, check: 'maths-live', verdict: list.length === 0 ? 'PASS' : 'FAIL', detail: list.length === 0 ? detail : `${list.join('; ')}${detail === '' ? '' : ` (${detail})`}` }];
-}
-
 /** The group as `pnpm check` runs it: the layout (no browser), then the input half (a real Chrome). */
 export async function mathsGroup(note: (text: string) => void = () => undefined, dir = join(tmpdir(), 'conduit-maths-out'), timeoutMs = 90_000): Promise<CheckResult[]> {
   note('maths');
   const results: CheckResult[] = [];
   try {
     const { problems, blocks, blanks } = mathProblems(await capture());
-    results.push({ turn: 0, check: 'maths-layout', verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? `${blocks} blocks at three screens: one x a place, ${blanks} blanks at least 44 and empty, no answer painted, the rule spans the columns, nothing overlaps` : problems.slice(0, 12).join('; ') });
+    results.push({ turn: 0, check: 'maths-layout', verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? `${blocks} blocks at three screens: one x a place, ${blanks} blanks at least 44 and empty, no answer painted, the rule spans the columns, nothing overlaps, nothing of the app's own checking painted` : problems.slice(0, 12).join('; ') });
   } catch (error) {
     results.push({ turn: 0, check: 'maths-layout', verdict: 'FAIL', detail: `stopped: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}` });
   }
   results.push(...(await mathsInputGroup(dir, timeoutMs, note)));
-  // a real read costs a few cents and needs the owner's login: only when asked (`MATHS_LIVE=1`)
-  if (process.env['MATHS_LIVE'] === '1') results.push(...(await mathsLive(dir, timeoutMs, note)));
   return results;
 }
 
 if (process.argv[1] !== undefined && /math-check\.ts$/.test(process.argv[1])) {
   const out = process.argv.includes('--out') ? (process.argv[process.argv.indexOf('--out') + 1] as string) : join(tmpdir(), 'conduit-maths-out');
-  if (process.argv.includes('--live')) {
-    void mathsLive(out, 180_000, (text) => process.stdout.write(`${text}\n`)).then((results) => {
-      for (const result of results) process.stdout.write(`${result.verdict} ${result.check}: ${result.detail}\n`);
-      process.exit(results.every((result) => result.verdict === 'PASS') ? 0 : 1);
-    });
-  } else
   mathsGroup((text) => process.stdout.write(`${text}\n`), out).then((results) => {
     for (const result of results) process.stdout.write(`${result.verdict} ${result.check}: ${result.detail}\n`);
     process.exit(results.every((result) => result.verdict === 'PASS') ? 0 : 1);

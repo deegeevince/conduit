@@ -107,14 +107,14 @@ export interface StageApp {
   readonly hook: StageHook;
   /** PLAN-canvas step 1, behind `?lens=1`: pinch and pan into the page. Null without the flag, and then nothing about the stage differs from before. */
   readonly lens: StageLens | null;
-  /** whether a screen point is on a part of an open ask (its blank, Check, Hint, Show me, a choice), or on a cell or button of a written method */
+  /** whether a screen point is on a part of an open ask (its blank, Check, Hint, Show me, a choice), or on a cell of a written method */
   askAt(clientX: number, clientY: number): boolean;
   /** whether the stage is the one to hear a pen now (no document covers it) */
   stageActive(): boolean;
   /** A short Pencil tap, as a press: a cell takes the keyboard, a button works, what is under it is pressed (`app/pen-write.ts`). */
   penTap(event: PointerEvent): void;
-  /** The pen's writing on a written method (`app/pen-write.ts`): who takes the ink off a cell when its ✕ is pressed, and who reads what the pen wrote before Check marks it. */
-  readonly pen: { set(writer: { clear(key: string, part: string): void; flush(): Promise<void> } | null): void };
+  /** The pen's writing on a written method (`app/pen-write.ts`): who takes the ink off a cell when its ✕ is pressed. */
+  readonly pen: { set(writer: { clear(key: string, part: string): void } | null): void };
   /** "Show the language": the lines the page was told, as they came, and whether the pane that shows them (and a film's copy of it) is on */
   readonly lang: LangLog;
   /** What the brain itself said ran (`model`) and whether the answer on stage may still be changed after it came to rest (`mend`): for the journey and the demo's model label. */
@@ -455,9 +455,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const access = createAccessLayer(page, {
     setControl: (id, value, commit) => painter.setControl(id, value, commit),
     chartAct: (key, action) => (chartHost === null ? Promise.reject(new Error('No charts.')) : chartHost.act(key, action)),
-    mathWrite: (key, part, text) => painter.mathWrite(key, part, text, 'key'),
+    mathWrite: (key, part, text) => painter.mathWrite(key, part, text),
     mathMove: (key, part, move) => painter.mathMove(key, part, move),
-    mathPress: (key, name) => pressMath(key, name),
     mathActive: (key, part) => painter.mathActive(key, part),
     mathClear: (key, part) => clearMath(key, part),
   });
@@ -1583,21 +1582,15 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     );
   };
   // Written methods (PLAN-maths M3): a tap on a cell puts the keyboard in it, inside the tap itself (a phone raises its number pad only for a focus made in the
-  // gesture); a tap on Check, Hint or Show me works it; a tap on a cell's ✕ takes the pen's ink off it. A finger, a pen's short tap and a mouse all come here.
-  let writer: { clear(key: string, part: string): void; flush(): Promise<void> } | null = null;
+  // gesture); a tap on a cell's ✕ takes the pen's ink off it. A finger, a pen's short tap and a mouse all come here.
+  let writer: { clear(key: string, part: string): void } | null = null;
   const clearMath = (key: string, part: string): void => {
     writer?.clear(key, part);
     painter.mathInk(key, part, false);
   };
-  /** Check reads what the pen wrote first (`app/pen-write.ts`), so that the marks are of what is on the paper */
-  const pressMath = (key: string, name: 'check' | 'hint' | 'show'): void => {
-    if (name === 'check' && writer !== null) void writer.flush().then(() => painter.mathPress(key, name));
-    else painter.mathPress(key, name);
-  };
   const mathDowns = new Map<number, { readonly x: number; readonly y: number }>();
   const tapMath = (hit: MathHit): void => {
     if (hit.kind === 'cell') access.focusMath(hit.key, hit.part);
-    else if (hit.kind === 'button') pressMath(hit.key, hit.name);
     else clearMath(hit.key, hit.part);
   };
   const tappableAt = (x: number, y: number): boolean =>
@@ -1653,7 +1646,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         mathDowns.set(event.pointerId, at);
         // the browser's own mouse events after a touch would move the focus to the canvas, away from the cell the tap puts the keyboard in
         event.preventDefault();
-        // fb-093. A finger on a box, Check, Hint or a cross works the written method and is nothing else: it is not also a tap "at" the block the brain is told of
+        // fb-093. A finger on a box or a cross works the written method and is nothing else: it is not also a tap "at" the block the brain is told of
         // (a Pencil's tap already was not: `penPress`)
         return;
       }

@@ -49,8 +49,8 @@ export interface StageInk {
   penDown(event: PointerEvent): void;
   /** Throws away the stroke a pointer has begun. */
   abort(pointerId: number): void;
-  /** Which strokes are written in a written method's cells (`app/pen-write.ts`): they are not a drawing waiting to be sent, so the bar does not show for them alone. */
-  setOwned(owned: (strokeId: string) => boolean): void;
+  /** What the writing is on, when it is not the stage itself: a written method's sum (`app/pen-write.ts`). Asked when the ink goes up, so the turn says which sum it was written on. */
+  setSurface(surface: () => { readonly element: string; readonly label: string } | null): void;
   /** The lens the stage is looked through: strokes stay in page units. Null: none. */
   setView(view: { readonly x: number; readonly y: number; readonly scale: number } | null): void;
   dispose(): void;
@@ -120,8 +120,8 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
   let explicit = false;
   /** the lens's pen-through mode (see `through`) */
   let throughOn = false;
-  /** the strokes that belong to a cell of a written method */
-  let owned: (strokeId: string) => boolean = () => false;
+  /** what the ink is on when not the stage: the sum the pen wrote in */
+  let surface: () => { readonly element: string; readonly label: string } | null = () => null;
   const ink = createInk(layer, {
     ...(options.guard === undefined ? {} : { guard: options.guard }),
     space: { w: Math.max(1, stage.clientWidth), h: Math.max(1, stage.clientHeight) },
@@ -130,11 +130,11 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     announce: app.announce,
   });
 
-  const freeStrokes = (): number => ink.model.strokes.filter((stroke) => !owned(stroke.id)).length;
   const take = async (): Promise<InkMarks | null> => {
-    if (freeStrokes() === 0) return null;
+    if (ink.model.strokes.length === 0) return null;
     const turn = app.lastTurn();
-    ink.setOn({ element: 'stage', ...(turn === null ? {} : { node: turn }), label: 'the stage, as the user saw it' });
+    const on = surface();
+    ink.setOn({ element: on?.element ?? 'stage', ...(turn === null ? {} : { node: turn }), label: on?.label ?? 'the stage, as the user saw it' });
     // the blanks of the open asks are the boxes the writing is reported against, only for this one turn
     const boxes = app.answerBoxes?.() ?? [];
     if (boxes.length === 0) return prepareMarks(ink, app.upload);
@@ -174,7 +174,7 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     const inked = throughOn && (penHeld.size > 0 || ink.model.strokes.length > 0);
     layer.hidden = !(explicit || inked);
     layer.classList.toggle('ink-stage--through', throughOn && !explicit);
-    if (throughOn) bar.element.hidden = !explicit && !ink.model.strokes.some((stroke) => !owned(stroke.id));
+    if (throughOn) bar.element.hidden = !explicit && ink.model.strokes.length === 0;
   };
   const penLeft = (event: PointerEvent): void => {
     if (!penHeld.delete(event.pointerId)) return;
@@ -214,14 +214,14 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
 
   const tell = (): void => {
     if (throughOn) refresh();
-    const n = freeStrokes();
+    const n = ink.model.strokes.length;
     menu.badge(n === 0 ? null : String(n));
     toggle.set({ label: n === 0 ? 'Draw' : `Draw (${n} stroke${n === 1 ? '' : 's'} waiting)` });
   };
   ink.onChange(tell);
 
   return {
-    pending: () => freeStrokes() > 0,
+    pending: () => ink.model.strokes.length > 0,
     take,
     sent,
     ink,
@@ -249,9 +249,8 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
       ink.abort(pointerId);
       if (penHeld.delete(pointerId)) refresh();
     },
-    setOwned(next) {
-      owned = next;
-      tell();
+    setSurface(next) {
+      surface = next;
     },
     setView: (view) => ink.setView(view),
     dispose() {
